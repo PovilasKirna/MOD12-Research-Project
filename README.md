@@ -129,7 +129,13 @@ research-project/
 
 ## 🧪 Testing
 
-Have to setup pytest, and run it on commit.
+Run tests with:
+
+```bash
+poetry run pytest
+```
+
+The test suite is located in the `tests/` directory. Use `pytest` to run tests, and ensure all tests pass before pushing code or making a pull request to **main**.
 
 ## 📜 License
 
