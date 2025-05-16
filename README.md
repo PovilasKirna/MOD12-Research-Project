@@ -65,6 +65,20 @@ pre-commit install
 Run your code within the Poetry environment:
 
 ```bash
+poetry shell
+```
+
+This activates the virtual environment. You can now run Python commands directly in this shell.
+Then run:
+
+```bash
+python your_project/script.py
+```
+
+or any other command.
+You can also run scripts directly:
+
+```bash
 poetry run python your_project/script.py
 ```
 
@@ -97,7 +111,12 @@ pre-commit run --all-files
 - Use `poetry` for installing dependencies, not `pip`.
 - All code must pass `black` and `ruff`.
 - Never commit without letting `pre-commit` run (it runs automatically).
-- Use `poetry shell` to enter the project environment if needed.
+- Use `poetry shell` to enter the project environment if needed. This gives you an isolated Python 3.11 environment for the project.
+- Use `poetry run` to execute scripts or commands within the project environment.
+- Use `poetry add <package>` to install new runtime dependencies.
+- Use `poetry add --group dev <package>` to install new development dependencies.
+- Use `poetry remove <package>` to remove dependencies.
+- Use `poetry update` to update dependencies.
 
 ---
 
@@ -113,6 +132,10 @@ research-project/
 ```
 
 ---
+
+## 🧪 Testing
+
+Have to setup pytest, and run it on commit.
 
 ## 📜 License
 
