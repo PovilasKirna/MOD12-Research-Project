@@ -1,0 +1,31 @@
+[tool.poetry]
+name = "research-project"
+version = "0.1.0"
+description = ""
+authors = ["Povilas Kirna <povilas.kirna@gmail.com>"]
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = ">3.11"
+
+
+[tool.poetry.group.dev.dependencies]
+black = "^25.1.0"
+ruff = "^0.11.10"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.black]
+line-length = 88
+target-version = ["py311"]
+
+[tool.ruff]
+line-length = 88
+target-version = "py311"
+extend-select = ["E", "F", "I"]
+ignore = ["E501"]
+
+[tool.ruff.format]
+quote-style = "double"
