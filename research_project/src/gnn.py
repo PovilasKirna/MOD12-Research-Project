@@ -1,18 +1,23 @@
 import os
 import pickle
+from collections import Counter
+
 import torch
 import torch.nn.functional as F
 from torch.nn import Linear
-from torch_geometric.data import Dataset, DataLoader, Data
+from torch_geometric.data import Data, DataLoader, Dataset
 from torch_geometric.nn import GCNConv, global_add_pool
-from collections import Counter
 
 
 class GraphDataset(Dataset):
     def __init__(self, root_dir):
         super().__init__()
         self.root_dir = root_dir
-        self.graph_files = [os.path.join(root_dir, f) for f in os.listdir(root_dir) if f.endswith(".pkl")]
+        self.graph_files = [
+            os.path.join(root_dir, f)
+            for f in os.listdir(root_dir)
+            if f.endswith(".pkl")
+        ]
 
     def len(self):
         return len(self.graph_files)
@@ -21,10 +26,8 @@ class GraphDataset(Dataset):
         with open(self.graph_files[idx], "rb") as f:
             raw_list = pickle.load(f)
 
-    
         raw_data = raw_list[0] if isinstance(raw_list, list) else raw_list
 
-        
         node_dicts = raw_data["nodes_data"]
         sorted_node_ids = sorted(node_dicts.keys())
         node_id_to_index = {node_id: i for i, node_id in enumerate(sorted_node_ids)}
@@ -34,7 +37,6 @@ class GraphDataset(Dataset):
         ]
         x = torch.tensor(node_features, dtype=torch.float)
 
-    
         edge_list = raw_data["edges_data"]
         edge_index = []
         edge_attr = []
@@ -47,11 +49,11 @@ class GraphDataset(Dataset):
         edge_index = torch.tensor(edge_index, dtype=torch.long).t().contiguous()
         edge_attr = torch.tensor(edge_attr, dtype=torch.float)
 
-
         label = raw_data["graph_data"].get("label", 0)
         y = torch.tensor([label], dtype=torch.long)
 
         return Data(x=x, edge_index=edge_index, y=y)
+
 
 # The Graph Neural Network Model
 class GNN(torch.nn.Module):
@@ -67,19 +69,23 @@ class GNN(torch.nn.Module):
         x = global_add_pool(x, batch)
         return self.lin(x)
 
+
 # Training function
 def train():
     # Adjust this to your actual graph folder
-    data_path = "csgo-analysis-main\graphs/00e7fec9-cee0-430f-80f4-6b50443ceacd"
+    data_path = "graphs/00e7fec9-cee0-430f-80f4-6b50443ceacd"
     dataset = GraphDataset(data_path)
     loader = DataLoader(dataset, batch_size=16, shuffle=True)
-    print("Label distribution:", Counter([dataset.get(i).y.item() for i in range(len(dataset))]))
+    print(
+        "Label distribution:",
+        Counter([dataset.get(i).y.item() for i in range(len(dataset))]),
+    )
 
     sample_graph = dataset.get(0)
     input_dim = sample_graph.num_node_features
     output_dim = int(sample_graph.y.max().item() + 1)  # number of classes
 
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = GNN(input_dim, hidden_dim=64, output_dim=output_dim).to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=0.01)
     loss_fn = torch.nn.CrossEntropyLoss()
@@ -100,4 +106,3 @@ def train():
 
 if __name__ == "__main__":
     train()
- 
