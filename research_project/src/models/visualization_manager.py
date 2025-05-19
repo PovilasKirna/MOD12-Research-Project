@@ -15,6 +15,8 @@ from models.routine import DEFAULT_ROUTINE_LENGTH, Routine
 from models.routine_tracker import RoutineTracker, TilizedRoutine
 from models.side_type import SideType
 
+DEFAULT_LABELLER_FRAME_NUMBER = 15
+
 class VisualizationManager:
     dm: DataManager
     fig: Figure
@@ -37,7 +39,7 @@ class VisualizationManager:
     routine_tracker_line_drawings: list[Quiver]
     routine_tracker_tile_drawings: PathCollection | None
 
-    def __init__(self, dm: DataManager, fig: Figure, axes: Axes, visualized_routine_length: int = DEFAULT_ROUTINE_LENGTH):
+    def __init__(self, dm: DataManager, fig: Figure, axes: Axes, visualized_routine_length: int = DEFAULT_ROUTINE_LENGTH, labeller_frame_number: int = DEFAULT_LABELLER_FRAME_NUMBER):
         self.dm = dm
         self.fig = fig
         self.axes = axes
@@ -50,6 +52,10 @@ class VisualizationManager:
         self.visualized_routine_length = visualized_routine_length
         self.do_visualize_routines = False
 
+        if labeller_frame_number < 0:
+            raise ValueError('Labeller default frame number cannot be negative.')
+        self.labeller_frame_number = labeller_frame_number
+        
         self.lines = list()
         self.path_collections = list()
         self.text = list()
