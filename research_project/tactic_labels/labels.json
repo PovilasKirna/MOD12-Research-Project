@@ -1,0 +1,85 @@
+[
+	{
+		"id": "a_long_rush",
+		"name": "A Long Rush",
+		"description": [
+			"All players rush through Long Doors.",
+			"Flash and smoke Long Corner to avoid AWPs.",
+			"Control A site from Long, sometimes split with Cat."
+		]
+	},
+	{
+		"id": "cat_split_a_1",
+		"name": "Cat (Short) Split A 1",
+		"description": [
+			"2-3 players go Catwalk (Short), 2 go Long.",
+			"Execute smokes and flashes to take A from two angles.",
+			"Classic \u201cSplit A\u201d pressure."
+		]
+	},
+	{
+		"id": "cat_split_a_2",
+		"name": "Cat Split A 2",
+		"description": [
+			"5 Players go catwalk.",
+			"2 Drop CT.",
+			"Catch long players from 2 vertical angles."
+		]
+	},
+	{
+		"id": "b_rush",
+		"name": "B Rush",
+		"description": [
+			"Fast push through Upper Tunnels to overwhelm B site defenders.",
+			"Flash over roof, molotov back site/car."
+		]
+	},
+	{
+		"id": "mid_to_b_split",
+		"name": "Mid to B Split",
+		"description": [
+			"2 go through Tunnels, 3 go Mid.",
+			"Smoke CT spawn, flash over Mid, and collapse onto B from both sides.",
+			"Strong counter to CT setups with only 1 B defender."
+		]
+	},
+	{
+		"id": "default_map_control",
+		"name": "Default / Map Control",
+		"description": [
+			"Spread out: 1 Long, 2 Upper Tunnels, 1 Mid, 1 Cat.",
+			"Hold for pushes, get info, then collapse based on picks or utility."
+		]
+	},
+	{
+		"id": "xbox_smoke_short_control",
+		"name": "X-Box Smoke + Short Control",
+		"description": [
+			"Smoke Xbox from T spawn to block mid vision.",
+			"Take Cat control safely for an A Short execute."
+		]
+	},
+	{
+		"id": "b_execute_navi",
+		"name": "B Execute (Navi)",
+		"description": [
+			"4 players go tunnels.",
+			"Flashing, nading, mollying site.",
+			"1 player goes suicide mid, smokes CT from Xbox, goes CT mid."
+		]
+	},
+	{
+		"id": "a_split_vitality",
+		"name": "A Split (Vitality)",
+		"description": [
+			"Begin:",
+			"- 1 Hold long push outside doors.",
+			"- 1 Hold B push lower tunnels.",
+			"- 2 Lower tunnels push CAT.",
+			"- 1 Mid suicide hold mid.",
+			"End:",
+			"- 2 Push CAT.",
+			"- 3 Push Long."
+		]
+	}
+]
