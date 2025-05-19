@@ -315,6 +315,7 @@ class VisualizationManager:
             'Smoke Grenade': 'gray',
             'HE Grenade': 'green',
             'Flashbang': 'gold',
+            'Decoy Grenade': 'purple', # Perhaps pick a better color for decoy
         }
 
         thrower_color_map = {
