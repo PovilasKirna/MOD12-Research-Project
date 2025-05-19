@@ -249,7 +249,11 @@ class TopBarMenu(ttk.Frame):
         self.heatmap_menu.entryconfigure(HeatmapMenuButtonNames.GENERATE_POSITIONS_HEATMAP.value, state=tk.NORMAL)
         self.heatmap_menu.entryconfigure(HeatmapMenuButtonNames.GENERATE_ROUTINES_HEATMAP.value, state=tk.NORMAL)
         self.heatmap_menu.entryconfigure(HeatmapMenuButtonNames.GENERATE_ROUTINES_HEATMAP_FROM_DIRECTORY.value, state=tk.NORMAL)
-    
+        
+        self.predictions_menu.entryconfigure('Load Tactic Labels File', state=tk.NORMAL)
+        self.predictions_menu.entryconfigure('Set Labeller Default Frame Number', state=tk.NORMAL)
+        self.predictions_menu.entryconfigure('Open Tactic Labeller', state=tk.NORMAL)
+        
     def toggle_routine_visibility(self):
         """Toggles the visibility of player routines on the map."""
         if self.main_app.vm is None:
@@ -485,6 +489,59 @@ class TopBarMenu(ttk.Frame):
 
         # Disable heatmap clearing
         self.heatmap_menu.entryconfigure(HeatmapMenuButtonNames.CLEAR_HEATMAP.value, state=tk.DISABLED)
+
+    def save_tactic_labels_file(self):
+        """Stub func"""
+    def load_tactic_labels_file(self):
+        """Stub func"""
+    def set_labeller_frame_number(self):
+        """Stub func"""
+        """Prompts the user for a desired routine length and sets the VisualizationManager's routine length to that value."""
+        if self.main_app.vm is None:
+            raise ValueError('VisualizationManager not initialized.')
+        
+        response = simpledialog.askinteger('Set Labeller Default Frame Number', 'Enter the frame number:', initialvalue=self.main_app.vm.labeller_frame_number)
+        if response is not None:
+            if response <= 0:
+                messagebox.showerror('Invalid Frame Number', 'Frame number must be greater than 0.')
+                return
+            self.main_app.vm.labeller_frame_number = response
+
+            print(self.main_app.vm.labeller_frame_number)
+            
+            self.main_app.vm.revisualize()
+            self.main_app.canvas.canvas.draw()
+    def labeller_round_change(self, round_index, previous = None):
+        if previous and round_index.get() == 1:
+            return
+        if previous:
+            round_index.set(round_index.get()-1)
+        else:
+            round_index.set(round_index.get()+1)
+        self.main_app.canvas.draw_round(round_index.get()-1)
+        self.main_app.vm.current_frame_index = self.main_app.vm.labeller_frame_number
+        self.main_app.vm.revisualize()
+        self.main_app.reload_visualization_widgets()
+    
+    def open_tactic_labeller(self):
+        """Stub func"""
+        round_index = tk.IntVar(value=1)
+        self.main_app.canvas.draw_round(round_index.get()-1)
+        self.main_app.vm.current_frame_index = self.main_app.vm.labeller_frame_number
+        self.main_app.vm.revisualize()
+        self.main_app.reload_visualization_widgets()
+        labeller = tk.Toplevel()
+        label1 = tk.Label(labeller, text="Current round").pack(pady=5)
+        label2 = tk.Label(labeller, textvariable=round_index).pack(pady=7)
+        tk.Button(labeller, text="Previous Round", command=lambda:self.labeller_round_change(round_index, True)).pack(padx=5, pady=12)
+        tk.Button(labeller, text="Next Round", command=lambda:self.labeller_round_change(round_index)).pack(padx=15, pady=12)
+        label3 = tk.Label(labeller, text="Saved tactic").pack(pady=15)
+        label4 = tk.Label(labeller, text="tactic").pack(pady=17)
+        tk.Button(labeller, text="Rush A Long", command='').pack(pady=20)
+        tk.Button(labeller, text="Rush A Short", command='').pack(pady=22)
+        tk.Button(labeller, text="Split A", command='').pack(pady=24)
+        tk.Button(labeller, text="Rush B", command='').pack(pady=26)
+        tk.Button(labeller, text="Split B", command='').pack(pady=28)
 
 class CanvasPanel(ttk.Frame):
     """Panel for displaying plots."""
