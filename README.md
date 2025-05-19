@@ -112,6 +112,30 @@ pre-commit run --all-files
 - Use `poetry remove <package>` to remove dependencies.
 - Use `poetry update` to update dependencies.
 
+### 📝 Conventional Commits
+
+We follow the [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/) specification for our commit messages. This helps automate versioning, changelogs, and improves readability.
+
+#### Format
+
+```text
+<type>[optional scope]: <description>
+
+[optional body]
+
+[optional footer(s)]
+```
+
+#### Examples
+
+- `feat: add tactical labeling function`
+- `fix(preprocessing): handle edge cases in data parsing`
+- `docs: update README with setup instructions`
+
+Allowed types include `feat`, `fix`, `docs`, `style`, `refactor`, `test`, `chore`, etc.
+
+Use descriptive messages to help others understand your changes.
+
 ---
 
 ## 📁 Project Structure
