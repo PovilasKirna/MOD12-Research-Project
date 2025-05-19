@@ -39,7 +39,7 @@ poetry --version
 
 ### 3. Set Python 3.11 as your interpreter
 
-Make sure Python 3.11 is installed via Homebrew or `pyenv`, then link it:
+Make sure Python 3.11 is installed via Homebrew or `pyenv`, then link it for example:
 
 ```bash
 poetry env use /opt/homebrew/opt/python@3.11/bin/python3.11
@@ -59,6 +59,16 @@ pre-commit install
 ```
 
 ---
+
+### 6. Install Tkinter (if needed)
+
+If you need to use Tkinter, install it on your system. For example, on macOS:
+
+```bash
+brew install python-tk@3.11
+```
+
+This will ensure Tkinter is available in your Python environment.
 
 ## 🛠 Usage
 
