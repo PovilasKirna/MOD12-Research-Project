@@ -205,6 +205,24 @@ class TopBarMenu(ttk.Frame):
 
         self.heatmap_menu = heatmap_menus
 
+        # GNN Predictions menu
+
+        predictions_menu = tk.Menu(top_bar, tearoff=False)
+        top_bar.add_cascade(label='Predictions', menu=predictions_menu)
+        predictions_menu.add_command(label='Save Tactic Labels File', command=self.save_tactic_labels_file)
+        predictions_menu.add_command(label='Load Tactic Labels File', command=self.load_tactic_labels_file)
+        predictions_menu.add_separator()
+        predictions_menu.add_command(label='Set Labeller Default Frame Number', command=self.set_labeller_frame_number)
+        predictions_menu.add_separator()
+        predictions_menu.add_command(label='Open Tactic Labeller', command=self.open_tactic_labeller)
+
+        predictions_menu.entryconfigure('Save Tactic Labels File', state=tk.DISABLED)
+        predictions_menu.entryconfigure('Load Tactic Labels File', state=tk.DISABLED)
+        predictions_menu.entryconfigure('Set Labeller Default Frame Number', state=tk.DISABLED)
+        predictions_menu.entryconfigure('Open Tactic Labeller', state=tk.DISABLED)
+
+        self.predictions_menu = predictions_menu
+
         self.pack(side='top', fill='x')
     
     def open_demo_file(self):
