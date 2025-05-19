@@ -7,6 +7,8 @@ from tkinter import filedialog
 import functools
 from pathlib import Path
 import pickle
+import json
+import os
 
 import subprocess
 import sys
@@ -511,11 +513,19 @@ class TopBarMenu(ttk.Frame):
             
             self.main_app.vm.revisualize()
             self.main_app.canvas.canvas.draw()
+
+    def load_tactic_labels_list(self):
+        output_folder = Path.cwd() / "research_project" / "tactic_labels" / "labels.json"
+        with open(output_folder, 'r') as f:
+            self.tactic_labels = json.load(f)
+
     def labeller_round_change(self, round_index, previous = None):
         if previous and round_index.get() == 1:
             return
-        if previous:
+        elif previous:
             round_index.set(round_index.get()-1)
+        elif round_index.get() == self.main_app.dm.get_round_count():
+            return
         else:
             round_index.set(round_index.get()+1)
         self.main_app.canvas.draw_round(round_index.get()-1)
@@ -526,6 +536,7 @@ class TopBarMenu(ttk.Frame):
     def open_tactic_labeller(self):
         """Stub func"""
         round_index = tk.IntVar(value=1)
+        self.load_tactic_labels_list()
         self.main_app.canvas.draw_round(round_index.get()-1)
         self.main_app.vm.current_frame_index = self.main_app.vm.labeller_frame_number
         self.main_app.vm.revisualize()
@@ -537,11 +548,12 @@ class TopBarMenu(ttk.Frame):
         tk.Button(labeller, text="Next Round", command=lambda:self.labeller_round_change(round_index)).pack(padx=15, pady=12)
         label3 = tk.Label(labeller, text="Saved tactic").pack(pady=15)
         label4 = tk.Label(labeller, text="tactic").pack(pady=17)
-        tk.Button(labeller, text="Rush A Long", command='').pack(pady=20)
-        tk.Button(labeller, text="Rush A Short", command='').pack(pady=22)
-        tk.Button(labeller, text="Split A", command='').pack(pady=24)
-        tk.Button(labeller, text="Rush B", command='').pack(pady=26)
-        tk.Button(labeller, text="Split B", command='').pack(pady=28)
+        for tactic in self.tactic_labels:
+            tk.Button(
+                labeller,
+                text=tactic['name'],
+                command=lambda tid=tactic['id']: self.assign_tactic_to_round(round_index.get(), tid)
+            ).pack(pady=5)
 
 class CanvasPanel(ttk.Frame):
     """Panel for displaying plots."""
