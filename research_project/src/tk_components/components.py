@@ -515,9 +515,35 @@ class TopBarMenu(ttk.Frame):
             self.main_app.canvas.canvas.draw()
 
     def load_tactic_labels_list(self):
-        output_folder = Path.cwd() / "research_project" / "tactic_labels" / "labels.json"
-        with open(output_folder, 'r') as f:
+        input_folder = Path.cwd() / "research_project" / "tactic_labels" / "labels.json"
+        with open(input_folder, 'r') as f:
             self.tactic_labels = json.load(f)
+
+    def save_round_tactic(self, round_index, tactic_id):
+        """"""
+        map_name = self.main_app.dm.get_map_name()
+        match_id = self.main_app.dm.get_match_id() # FIX MATCH ID !!!!
+        print(f"{map_name} {match_id}")
+        output_folder = Path.cwd() / "research_project" / "tactic_labels" / map_name
+        output_folder.mkdir(parents=True, exist_ok=True)
+
+        output_file = output_folder / f"{match_id}.json"
+
+        # Load existing data if the file exists
+        if output_file.exists():
+            with open(output_file, 'r') as f:
+                data = json.load(f)
+        else:
+            data = {}
+
+        # Update the data with the new tactic
+        data[round_index.get()] = tactic_id
+
+        # Save json
+        with open(output_file, 'w') as f:
+            json.dump(data, f, indent=4)
+        print(f"Saved tactic '{tactic_id}' for round {round_index} in {output_file}")
+        self.labeller_round_change(round_index)
 
     def labeller_round_change(self, round_index, previous = None):
         if previous and round_index.get() == 1:
@@ -552,7 +578,7 @@ class TopBarMenu(ttk.Frame):
             tk.Button(
                 labeller,
                 text=tactic['name'],
-                command=lambda tid=tactic['id']: self.assign_tactic_to_round(round_index.get(), tid)
+                command=lambda tid=tactic['id']: self.save_round_tactic(round_index, tid)
             ).pack(pady=5)
 
 class CanvasPanel(ttk.Frame):
