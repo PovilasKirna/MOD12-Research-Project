@@ -27,7 +27,6 @@ class GraphDataset(Dataset):
                     else:
                         self.all_graphs.append((graphs_in_file, file_path))
 
-        # Load label mapping once
         with open(
             "research_project/tactic_labels/de_dust2/00e7fec9-cee0-430f-80f4-6b50443ceacd.json",
             "r",
@@ -36,7 +35,6 @@ class GraphDataset(Dataset):
         self.unique_labels = sorted(set(self.label_mapping.values()))
         self.label_to_id = {label: idx for idx, label in enumerate(self.unique_labels)}
 
-        # Preprocess all graphs
         self.processed_graphs = []
         for graph_data, file_path in self.all_graphs:
             self.processed_graphs.append(
@@ -45,7 +43,6 @@ class GraphDataset(Dataset):
 
     def _process_graph_data(self, raw_data, file_path):
         """Process a single graph's data with its source file information"""
-        # Graph structure processing (same as before)
         node_dicts = raw_data["nodes_data"]
         sorted_node_ids = sorted(node_dicts.keys())
         node_id_to_index = {node_id: i for i, node_id in enumerate(sorted_node_ids)}
@@ -67,7 +64,6 @@ class GraphDataset(Dataset):
         edge_index = torch.tensor(edge_index, dtype=torch.long).t().contiguous()
         edge_attr = torch.tensor(edge_attr, dtype=torch.float)
 
-        # Label processing using the source file path
         filename = os.path.basename(file_path)
         file_id = filename.replace("graph-rounds-", "").replace(".pkl", "")
         str_label = self.label_mapping.get(file_id, "default_map_control")
@@ -151,7 +147,6 @@ def train():
 
         print(f"Epoch {epoch}, Loss: {total_loss:.4f}, Accuracy: {accuracy:.2%}")
 
-        # Optional: evaluate on test set
         model.eval()
         correct = 0
         total = 0
