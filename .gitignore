@@ -5,3 +5,4 @@ __pycache__/
 .venv/
 poetry.lock
 .python-version
+.dust2_unlisted_demos
