@@ -50,7 +50,7 @@ class DataManager:
 
     def get_match_id(self) -> str | None:
         """Returns the match ID of the Game object, or None if no match ID is found."""
-        return self.data.get('matchID', None)
+        return self.file_path.stem
     
     def _get_game_rounds(self) -> list[GameRound]:
         """Returns the list of GameRound objects in the Game object. If there are no game rounds, raises a ValueError."""
