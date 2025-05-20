@@ -44,7 +44,7 @@ class GraphDataset(Dataset):
         for src, tgt, attr in edge_list:
             if src in node_id_to_index and tgt in node_id_to_index:
                 edge_index.append([node_id_to_index[src], node_id_to_index[tgt]])
-                edge_attr.append([attr["dist"]])  # add more features if needed
+                edge_attr.append([attr["dist"]])
 
         edge_index = torch.tensor(edge_index, dtype=torch.long).t().contiguous()
         edge_attr = torch.tensor(edge_attr, dtype=torch.float)
@@ -55,7 +55,6 @@ class GraphDataset(Dataset):
         return Data(x=x, edge_index=edge_index, y=y)
 
 
-# The Graph Neural Network Model
 class GNN(torch.nn.Module):
     def __init__(self, input_dim, hidden_dim, output_dim):
         super().__init__()
@@ -70,9 +69,8 @@ class GNN(torch.nn.Module):
         return self.lin(x)
 
 
-# Training function
 def train():
-    # Adjust this to your actual graph folder
+
     data_path = "graphs/00e7fec9-cee0-430f-80f4-6b50443ceacd"
     dataset = GraphDataset(data_path)
     loader = DataLoader(dataset, batch_size=16, shuffle=True)
