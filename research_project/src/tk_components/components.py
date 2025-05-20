@@ -551,7 +551,6 @@ class TopBarMenu(ttk.Frame):
         if previous and round_index.get() == 1:
             return
         elif previous:
-        elif previous:
             round_index.set(round_index.get()-1)
         elif round_index.get() == self.main_app.dm.get_round_count():
             return
