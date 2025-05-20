@@ -1,3 +1,4 @@
+import json
 import os
 import pickle
 from collections import Counter
@@ -12,23 +13,39 @@ from torch_geometric.nn import GCNConv, global_add_pool
 
 class GraphDataset(Dataset):
     def __init__(self, root_dir):
-        super().__init__()
-        self.root_dir = root_dir
-        self.graph_files = [
-            os.path.join(root_dir, f)
-            for f in os.listdir(root_dir)
-            if f.endswith(".pkl")
-        ]
+        super().__init__(root_dir)
+        self.all_graphs = []
 
-    def len(self):
-        return len(self.graph_files)
+        for file in os.listdir(self.root):
+            if file.endswith(".pkl"):
+                file_path = os.path.join(self.root, file)
+                with open(file_path, "rb") as f:
+                    graphs_in_file = pickle.load(f)
+                    if isinstance(graphs_in_file, list):
+                        for graph_data in graphs_in_file:
+                            self.all_graphs.append((graph_data, file_path))
+                    else:
+                        self.all_graphs.append((graphs_in_file, file_path))
 
-    def get(self, idx):
-        with open(self.graph_files[idx], "rb") as f:
-            raw_list = pickle.load(f)
+        # Load label mapping once
+        with open(
+            "research_project/tactic_labels/de_dust2/00e7fec9-cee0-430f-80f4-6b50443ceacd.json",
+            "r",
+        ) as f:
+            self.label_mapping = json.load(f)
+        self.unique_labels = sorted(set(self.label_mapping.values()))
+        self.label_to_id = {label: idx for idx, label in enumerate(self.unique_labels)}
 
-        raw_data = raw_list[0] if isinstance(raw_list, list) else raw_list
+        # Preprocess all graphs
+        self.processed_graphs = []
+        for graph_data, file_path in self.all_graphs:
+            self.processed_graphs.append(
+                self._process_graph_data(graph_data, file_path)
+            )
 
+    def _process_graph_data(self, raw_data, file_path):
+        """Process a single graph's data with its source file information"""
+        # Graph structure processing (same as before)
         node_dicts = raw_data["nodes_data"]
         sorted_node_ids = sorted(node_dicts.keys())
         node_id_to_index = {node_id: i for i, node_id in enumerate(sorted_node_ids)}
@@ -50,10 +67,20 @@ class GraphDataset(Dataset):
         edge_index = torch.tensor(edge_index, dtype=torch.long).t().contiguous()
         edge_attr = torch.tensor(edge_attr, dtype=torch.float)
 
-        label = raw_data["graph_data"].get("strategy_used", 0)
+        # Label processing using the source file path
+        filename = os.path.basename(file_path)
+        file_id = filename.replace("graph-rounds-", "").replace(".pkl", "")
+        str_label = self.label_mapping.get(file_id, "default_map_control")
+        label = self.label_to_id[str_label]
         y = torch.tensor(label, dtype=torch.long)
 
         return Data(x=x, edge_index=edge_index, y=y)
+
+    def len(self):
+        return len(self.processed_graphs)
+
+    def get(self, idx):
+        return self.processed_graphs[idx]
 
 
 class GNN(torch.nn.Module):
@@ -79,11 +106,12 @@ def train():
 
     print(
         "Label distribution:",
-        Counter([dataset.get(i).y.item() for i in range(len(dataset))]),
+        Counter([dataset[i].y.item() for i in range(len(dataset))]),
     )
 
     train_len = int(0.8 * len(dataset))
-    train_set, test_set = random_split(dataset, [train_len, len(dataset) - train_len])
+    test_len = len(dataset) - train_len
+    train_set, test_set = random_split(dataset, [train_len, test_len])
 
     train_loader = DataLoader(train_set, batch_size=16, shuffle=True)
     test_loader = DataLoader(test_set, batch_size=16)
