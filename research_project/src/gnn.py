@@ -50,7 +50,7 @@ class GraphDataset(Dataset):
         edge_index = torch.tensor(edge_index, dtype=torch.long).t().contiguous()
         edge_attr = torch.tensor(edge_attr, dtype=torch.float)
 
-        label = raw_data["graph_data"].get("label", 0)
+        label = raw_data["graph_data"].get("strategy_used", 0)
         y = torch.tensor(label, dtype=torch.long)
 
         return Data(x=x, edge_index=edge_index, y=y)
