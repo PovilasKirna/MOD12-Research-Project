@@ -5,6 +5,7 @@ from collections import Counter
 import torch
 import torch.nn.functional as F
 from torch.nn import Linear
+from torch.utils.data import random_split
 from torch_geometric.data import Data, DataLoader, Dataset
 from torch_geometric.nn import GCNConv, global_add_pool
 
@@ -50,17 +51,17 @@ class GraphDataset(Dataset):
         edge_attr = torch.tensor(edge_attr, dtype=torch.float)
 
         label = raw_data["graph_data"].get("label", 0)
-        y = torch.tensor([label], dtype=torch.long)
+        y = torch.tensor(label, dtype=torch.long)
 
         return Data(x=x, edge_index=edge_index, y=y)
 
 
 class GNN(torch.nn.Module):
-    def __init__(self, input_dim, hidden_dim, output_dim):
+    def __init__(self, input_dim, hidden_channels, output_dim):
         super().__init__()
-        self.conv1 = GCNConv(input_dim, hidden_dim)
-        self.conv2 = GCNConv(hidden_dim, hidden_dim)
-        self.lin = Linear(hidden_dim, output_dim)
+        self.conv1 = GCNConv(input_dim, hidden_channels)
+        self.conv2 = GCNConv(hidden_channels, hidden_channels)
+        self.lin = Linear(hidden_channels, output_dim)
 
     def forward(self, x, edge_index, batch):
         x = F.relu(self.conv1(x, edge_index))
@@ -70,36 +71,73 @@ class GNN(torch.nn.Module):
 
 
 def train():
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    print(f"Using device: {device}")
+    data_path = "research_project\graphs\\00e7fec9-cee0-430f-80f4-6b50443ceacd"
 
-    data_path = "graphs/00e7fec9-cee0-430f-80f4-6b50443ceacd"
     dataset = GraphDataset(data_path)
-    loader = DataLoader(dataset, batch_size=16, shuffle=True)
+
     print(
         "Label distribution:",
         Counter([dataset.get(i).y.item() for i in range(len(dataset))]),
     )
 
+    train_len = int(0.8 * len(dataset))
+    train_set, test_set = random_split(dataset, [train_len, len(dataset) - train_len])
+
+    train_loader = DataLoader(train_set, batch_size=16, shuffle=True)
+    test_loader = DataLoader(test_set, batch_size=16)
+
+    print("Train set size:", len(train_set), "Test set size:", len(test_set))
+
     sample_graph = dataset.get(0)
     input_dim = sample_graph.num_node_features
-    output_dim = int(sample_graph.y.max().item() + 1)  # number of classes
+    output_dim = int(max(graph.y.item() for graph in dataset)) + 1  # num classes
 
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model = GNN(input_dim, hidden_dim=64, output_dim=output_dim).to(device)
-    optimizer = torch.optim.Adam(model.parameters(), lr=0.01)
+    model = GNN(input_dim=input_dim, hidden_channels=64, output_dim=output_dim).to(
+        device
+    )
+    optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
     loss_fn = torch.nn.CrossEntropyLoss()
 
     for epoch in range(1, 31):
         model.train()
         total_loss = 0
-        for batch in loader:
+        total_correct = 0
+        total_samples = 0
+
+        for batch in train_loader:
             batch = batch.to(device)
             optimizer.zero_grad()
             out = model(batch.x, batch.edge_index, batch.batch)
             loss = loss_fn(out, batch.y)
             loss.backward()
             optimizer.step()
+
             total_loss += loss.item()
-        print(f"Epoch {epoch}, Loss: {total_loss:.4f}")
+            pred = out.argmax(dim=1)
+            total_correct += (pred == batch.y).sum().item()
+            total_samples += batch.y.size(0)
+
+        accuracy = total_correct / total_samples if total_samples > 0 else 0
+
+        print(f"Epoch {epoch}, Loss: {total_loss:.4f}, Accuracy: {accuracy:.2%}")
+
+        # Optional: evaluate on test set
+        model.eval()
+        correct = 0
+        total = 0
+        with torch.no_grad():
+            for batch in test_loader:
+                batch = batch.to(device)
+                out = model(batch.x, batch.edge_index, batch.batch)
+                pred = out.argmax(dim=1)
+                correct += (pred == batch.y).sum().item()
+                total += batch.y.size(0)
+
+        test_acc = correct / total if total > 0 else 0
+
+        print(f" → Test Accuracy: {test_acc:.2%}")
 
 
 if __name__ == "__main__":
