@@ -8,7 +8,7 @@ import aiohttp
 import discord
 
 logging.getLogger("discord").setLevel(logging.WARNING)
-WEBHOOK_URL = "https://discord.com/api/webhooks/1374409513947627570/1J-3R2ifsxisq0bfe0j4b--aBTaNwSxgruiXOVXlas2lL1Jd4IfvANgcsHrwTvzcl7qW"
+WEBHOOK_URL = "https://discord.com/api/webhooks/1374662961905405995/VY408JIAX8GJ5HUhS_rtoaTJ0zx-CNWljuKPfqWd0JmRzwyPp_UG2TFB5sntqVg9Vbhn"
 
 
 async def send_progress_embed(
