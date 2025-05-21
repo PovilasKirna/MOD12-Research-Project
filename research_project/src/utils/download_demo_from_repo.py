@@ -63,31 +63,26 @@ def main():
 
     for demo_file in tqdm(demo_files, desc="Processing demos"):
         file_path = os.path.join(output_directory, os.path.basename(demo_file))
-        try:
-            # lan directory
-            if not os.path.exists(file_path):
+        if not os.path.exists(file_path):
+            try:
+                # lan directory
                 full_url = os.path.join(repo_url, folders[0], demo_file)
                 download_file(full_url, file_path)
-        except requests.exceptions.HTTPError:
-            # online directory
-            if not os.path.exists(file_path):
+            except requests.exceptions.HTTPError:
+                # online directory
                 full_url = os.path.join(repo_url, folders[1], demo_file)
                 try:
                     download_file(full_url, file_path)
                 except requests.exceptions.RequestException as e:
                     print(f"Error downloading {demo_file}: {e}")
                     return
+            # Extract the downloaded file
+            extract_single_xz_json_file(
+                file_path, file_path[:-3]
+            )  # Remove ".xz" extension for output file
 
-        if not os.path.exists(file_path):
-            print(f"File {file_path} does not exist after download.")
-            return
-        # Extract the downloaded file
-        extract_single_xz_json_file(
-            file_path, file_path[:-3]
-        )  # Remove ".xz" extension for output file
-
-        # Remove the downloaded .xz file
-        os.remove(file_path)
+            # Remove the downloaded .xz file
+            os.remove(file_path)
 
     print(
         f"✅ Downloaded and extracted {len(demo_files)} demo files from the repository."
