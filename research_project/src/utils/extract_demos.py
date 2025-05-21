@@ -15,7 +15,7 @@ def extract_xz_json_files(source_dir, output_dir):
                 extract_single_xz_json_file(input_path, output_path)
 
 
-def extract_single_xz_json_file(input_path, output_path):
+def extract_single_xz_json_file(input_path, output_path, silent=True):
     try:
         with lzma.open(input_path, "rt", encoding="utf-8") as xz_file:
             data = json.load(xz_file)
@@ -23,7 +23,8 @@ def extract_single_xz_json_file(input_path, output_path):
         with open(output_path, "w", encoding="utf-8") as json_file:
             json.dump(data, json_file, indent=2)
 
-        print(f"Extracted: {input_path} → {output_path}")
+        if not silent:
+            print(f"Extracted: {input_path} → {output_path}")
     except Exception as e:
         print(f"Failed to extract {input_path}: {e}")
 
