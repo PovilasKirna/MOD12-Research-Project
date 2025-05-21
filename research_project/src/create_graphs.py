@@ -14,11 +14,32 @@ from models.data_manager import DataManager
 from utils.discord_webhook import calculate_eta, send_progress_embed
 
 LOGGING_LEVEL = os.environ.get("LOGGING_INFO")
-if LOGGING_LEVEL == "INFO":
-    logging.basicConfig(level=logging.INFO)
-elif LOGGING_LEVEL == "DEBUG":
-    logging.basicConfig(level=logging.DEBUG)
+# Set up logger and suppress default console handlers
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.DEBUG)  # capture everything, filter through handlers
+logging.getLogger("asyncio").setLevel(logging.WARNING)
+
+
+# Remove default handlers to prevent console output
+for handler in logger.handlers[:]:
+    logger.removeHandler(handler)
+
+# Set up file handler for warnings and above
+logs_output_folder = (
+    Path(__file__).parent / "../graphs/" / stats.EXAMPLE_DEMO_PATH.stem / "logs"
+)
+logs_output_folder.mkdir(parents=True, exist_ok=True)
+current_time = time.localtime()
+log_file_name = f"{current_time.tm_year}-{current_time.tm_mon:02d}-{current_time.tm_mday:02d}_{current_time.tm_hour:02d}-{current_time.tm_min:02d}-{current_time.tm_sec:02d}.log"
+log_file_path = logs_output_folder / log_file_name
+file_handler = logging.FileHandler(log_file_path)
+file_handler.setLevel(logging.DEBUG)
+file_formatter = logging.Formatter("%(asctime)s - %(levelname)s - %(message)s")
+file_handler.setFormatter(file_formatter)
+logger.addHandler(file_handler)
+
+# Disable propagation to root logger to suppress console output
+logger.propagate = False
 
 KEYS_ROUND_LEVEL = (
     "tFreezeTimeEndEqVal",
@@ -100,6 +121,16 @@ WEAPON_ID_MAPPING = {  # TODO: add missing weapons
 }
 
 
+def print_progress_bar(iteration, round, total, length=40):
+    percent = f"{100 * (iteration / float(total)):.1f}"
+    filled_length = int(length * iteration // total)
+    bar = "█" * filled_length + "-" * (length - filled_length)
+    print(
+        f"\rProcessing round {round} frames: |{bar}| {percent}% ({iteration}/{total})",
+        end="\r",
+    )
+
+
 def process_round(
     dm: DataManager, round_idx: int, strategy_used: str = "unknown"
 ) -> list[list[Any]]:
@@ -111,7 +142,6 @@ def process_round(
     round_data["strategy_used"] = strategy_used
 
     frames = dm._get_frames(round_idx)
-    logger.info("Processing round %d with %d frames." % (round_idx, len(frames)))
 
     # store crucial bomb events for later analysis and estimating correct round ingame seconds.
     bomb_event_data = stats.process_bomb_data(round)
@@ -120,8 +150,8 @@ def process_round(
     graphs = []
     error_frame_count = 0
     total_frames = len(frames)
+    print_progress_bar(0, round_idx, total_frames)
     for frame_idx, frame in enumerate(frames):
-
         # check validity of frame
         valid_frame, err_text = stats.check_frame_validity(frame)
         if not valid_frame:
@@ -181,6 +211,7 @@ def process_round(
             logger.warning(
                 "Frame %d (%f%%): %s" % (frame_idx, frame_idx / total_frames, exc)
             )
+            logger.exception(f"Round {round_idx}, Frame {frame_idx}: {exc}")
             error_frame_count += 1
             continue  # skip errors
         for key in nodes_data.keys():
@@ -227,6 +258,8 @@ def process_round(
             "edges_data": edges_data,
         }
         graphs.append(graph)
+        print_progress_bar(frame_idx + 1, round_idx, total_frames)
+    print("\n")
 
     return graphs
 
@@ -277,7 +310,7 @@ def distance_bombsites(dm: DataManager, nodes: dict):
     # sanity check
     for dist in list(closest_distances_A.values()) + list(closest_distances_B.values()):
         if dist == float("Inf"):
-            raise ValueError(
+            logger.warning(
                 "Could not find closest bombsite distances for at least one node."
             )
 
@@ -378,7 +411,7 @@ async def main():
 
         logger.info("%d graphs written to file." % len(graphs))
         graphs_total += len(graphs)
-    logger.info("SUCCESSFULLY COMPLETED: %d graphs written in total." % graphs_total)
+    logger.info("✅ SUCCESSFULLY COMPLETED: %d graphs written in total." % graphs_total)
 
 
 if __name__ == "__main__":

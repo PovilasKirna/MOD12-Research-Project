@@ -1,4 +1,5 @@
 import asyncio
+import logging
 import random
 import time
 from datetime import datetime, timedelta
@@ -6,6 +7,7 @@ from datetime import datetime, timedelta
 import aiohttp
 import discord
 
+logging.getLogger("discord").setLevel(logging.WARNING)
 WEBHOOK_URL = "https://discord.com/api/webhooks/1374409513947627570/1J-3R2ifsxisq0bfe0j4b--aBTaNwSxgruiXOVXlas2lL1Jd4IfvANgcsHrwTvzcl7qW"
 
 
@@ -48,6 +50,7 @@ async def send_progress_embed(
             username="Graph Updates",
             avatar_url="https://as2.ftcdn.net/jpg/05/56/17/61/1000_F_556176185_wmiwJtRkwDEs73iWgGuY0vugaZtV0AzD.jpg",
         )
+        logging.info("✅ Discord Webhook Sent Successfully" + f" {id} {progress}%")
 
 
 # Example: send 0-100 progress
