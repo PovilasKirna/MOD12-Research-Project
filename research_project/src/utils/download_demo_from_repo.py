@@ -59,25 +59,24 @@ def main():
     demo_files = get_demo_files_from_list(demo_files_list)
 
     print(f"Found {len(demo_files)} demo files in the repository.")
-    print(f"Downloading demo files to {output_directory}...")
+    print(f"Downloading demo files to {output_directory}")
 
     for demo_file in tqdm(demo_files, desc="Processing demos"):
         file_path = os.path.join(output_directory, os.path.basename(demo_file))
         try:
-            # lan
-            full_url = os.path.join(repo_url, folders[0], demo_file)
-            download_file(full_url, file_path)
-        except requests.exceptions.HTTPError:
-            print(
-                "Couldn't find the file in LAN directory trying to download from online"
-            )
-            # online
-            full_url = os.path.join(repo_url, folders[1], demo_file)
-            try:
+            # lan directory
+            if not os.path.exists(file_path):
+                full_url = os.path.join(repo_url, folders[0], demo_file)
                 download_file(full_url, file_path)
-            except requests.exceptions.RequestException as e:
-                print(f"Error downloading {demo_file}: {e}")
-                return
+        except requests.exceptions.HTTPError:
+            # online directory
+            if not os.path.exists(file_path):
+                full_url = os.path.join(repo_url, folders[1], demo_file)
+                try:
+                    download_file(full_url, file_path)
+                except requests.exceptions.RequestException as e:
+                    print(f"Error downloading {demo_file}: {e}")
+                    return
 
         if not os.path.exists(file_path):
             print(f"File {file_path} does not exist after download.")
