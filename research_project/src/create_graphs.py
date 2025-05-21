@@ -345,6 +345,14 @@ def _distance_internal(map_name, area_a, area_b):
 
 
 async def main():
+    # demo_paths = [
+    #     "research-project/research_project/demos/.dust2_unlisted_demos/0a66c696-765e-4462-968b-4fbcec50c574.json",
+    #     "research-project/research_project/demos/.dust2_unlisted_demos/0b8a2f77-58b9-4fc2-8ffc-e9c4edf1841d.json",
+    #     "research-project/research_project/demos/.dust2_unlisted_demos/0bcc5ce0-cbd9-4e58-8b50-2b1e0580f180.json",
+    #     "research-project/research_project/demos/.dust2_unlisted_demos/00e7fec9-cee0-430f-80f4-6b50443ceacd.json",
+    #     "research-project/research_project/demos/.dust2_unlisted_demos/0ea053f3-3553-45d7-862f-87ca8879ca9b.json",
+    # ]
+
     dm = DataManager(stats.EXAMPLE_DEMO_PATH, do_validate=False)
 
     output_folder = Path(__file__).parent / "../graphs/" / stats.EXAMPLE_DEMO_PATH.stem
