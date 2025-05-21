@@ -10,3 +10,5 @@ poetry.lock
 logs/
 research_project/demos/
 research_project/graphs/
+.env.local
+.env
