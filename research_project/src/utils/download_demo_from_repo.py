@@ -63,7 +63,7 @@ def main():
 
     for demo_file in tqdm(demo_files, desc="Processing demos"):
         file_path = os.path.join(output_directory, os.path.basename(demo_file))
-        if not os.path.exists(file_path):
+        if not os.path.exists(file_path[:-3]):
             try:
                 # lan directory
                 full_url = os.path.join(repo_url, folders[0], demo_file)
@@ -73,7 +73,7 @@ def main():
                 full_url = os.path.join(repo_url, folders[1], demo_file)
                 try:
                     download_file(full_url, file_path)
-                except requests.exceptions.RequestException as e:
+                except Exception as e:
                     print(f"Error downloading {demo_file}: {e}")
                     return
             # Extract the downloaded file
