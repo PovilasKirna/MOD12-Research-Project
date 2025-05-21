@@ -2,11 +2,11 @@
 
 import json
 import os
-from typing import Dict, List
+from typing import List
 
 import requests
-from extract_demos import extract_single_xz_json_file
 from tqdm import tqdm
+from utils.extract_demos import extract_single_xz_json_file
 
 
 def download_file(url: str, output_path: str) -> None:
@@ -24,39 +24,42 @@ def download_file(url: str, output_path: str) -> None:
         f.write(response.content)
 
 
-def get_demo_files_from_list(demo_files: List[Dict[str, str]]) -> List[str]:
+def get_demo_files_from_list(demo_files_list_path: str, compressed: bool) -> List[str]:
     """
     Get a list of demo files from a repository.
     Args:
-        demo_files (List[Dict { "filename": str, "path": str }]): A list of dictionaries containing demo file names and paths.
+        demo_files_list_path (str): Path to the JSON file containing demo file information.
+        compressed (bool): Whether to return compressed file names.
     Returns:
         List[str]: A list of demo file names.
     """
-    return [
-        (
-            demo_file["filename"] + ".xz"
-            if demo_file["filename"].endswith(".json")
-            else demo_file["filename"]
-        )
-        for demo_file in demo_files
-    ]
+    demo_files_list = []
+    with open(demo_files_list_path, "r") as f:
+        demo_files_list = json.load(f)
+
+    if not demo_files_list:
+        print("No demo files found in the repository.")
+        return []
+
+    names = []
+    for demo_file in demo_files_list:
+        if compressed:
+            names.append(demo_file["filename"] + ".xz")
+        else:
+            names.append(demo_file["filename"])
+
+    return names
 
 
 def main():
     repo_url = "https://github.com/pnxenopoulos/esta/raw/refs/heads/main/data/"
     folders = ["lan", "online"]
 
+    demo_files_list = "file_paths.json"
     output_directory = "research_project/demos/dust2"
     os.makedirs(output_directory, exist_ok=True)
-    demo_files_list = []
-    with open("file_paths.json", "r") as f:
-        demo_files_list = json.load(f)
 
-    if not demo_files_list:
-        print("No demo files found in the repository.")
-        return
-
-    demo_files = get_demo_files_from_list(demo_files_list)
+    demo_files = get_demo_files_from_list(demo_files_list, compressed=True)
 
     print(f"Found {len(demo_files)} demo files in the repository.")
     print(f"Downloading demo files to {output_directory}")

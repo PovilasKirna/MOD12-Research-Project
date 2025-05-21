@@ -1,9 +1,11 @@
 import asyncio
+import functools
 import json
 import logging
 import os
 import pickle
 import time
+from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 from typing import Any
 
@@ -12,6 +14,7 @@ from awpy.analytics.nav import area_distance, find_closest_area
 from awpy.data import AREA_DIST_MATRIX, NAV
 from models.data_manager import DataManager
 from utils.discord_webhook import calculate_eta, send_progress_embed
+from utils.download_demo_from_repo import get_demo_files_from_list
 
 LOGGING_LEVEL = os.environ.get("LOGGING_INFO")
 # Set up logger and suppress default console handlers
@@ -344,18 +347,9 @@ def _distance_internal(map_name, area_a, area_b):
     return current_bombsite_dist
 
 
-async def main():
-    # demo_paths = [
-    #     "research-project/research_project/demos/.dust2_unlisted_demos/0a66c696-765e-4462-968b-4fbcec50c574.json",
-    #     "research-project/research_project/demos/.dust2_unlisted_demos/0b8a2f77-58b9-4fc2-8ffc-e9c4edf1841d.json",
-    #     "research-project/research_project/demos/.dust2_unlisted_demos/0bcc5ce0-cbd9-4e58-8b50-2b1e0580f180.json",
-    #     "research-project/research_project/demos/.dust2_unlisted_demos/00e7fec9-cee0-430f-80f4-6b50443ceacd.json",
-    #     "research-project/research_project/demos/.dust2_unlisted_demos/0ea053f3-3553-45d7-862f-87ca8879ca9b.json",
-    # ]
-
-    dm = DataManager(stats.EXAMPLE_DEMO_PATH, do_validate=False)
-
-    output_folder = Path(__file__).parent / "../graphs/" / stats.EXAMPLE_DEMO_PATH.stem
+async def process_single_demo(demo_path):
+    dm = DataManager(Path(demo_path), do_validate=False)
+    output_folder = Path(__file__).parent / "../graphs/" / Path(demo_path).stem
     output_filename_template = str(output_folder / "graph-rounds-%d.pkl")
     output_folder.mkdir(parents=True, exist_ok=True)
 
@@ -419,7 +413,38 @@ async def main():
 
         logger.info("%d graphs written to file." % len(graphs))
         graphs_total += len(graphs)
+
     logger.info("✅ SUCCESSFULLY COMPLETED: %d graphs written in total." % graphs_total)
+
+
+def process_single_demo_sync(demo_path):
+    asyncio.run(process_single_demo(demo_path))
+
+
+async def main():
+    demo_filenames = get_demo_files_from_list("file_paths.json", compressed=False)
+
+    demo_pathnames = [
+        "research_project/demos/dust2/" + demo_filename
+        for demo_filename in demo_filenames
+    ]
+
+    batch_size = 10
+
+    loop = asyncio.get_event_loop()
+
+    with ProcessPoolExecutor(max_workers=batch_size) as executor:
+        tasks = [
+            loop.run_in_executor(
+                executor, functools.partial(process_single_demo_sync, demo)
+            )
+            for demo in demo_pathnames[:batch_size]
+        ]
+        await asyncio.gather(*tasks)
+
+    logger.info(
+        "✅ SUCCESSFULLY COMPLETED: %d graphs written in total." % len(demo_pathnames)
+    )
 
 
 if __name__ == "__main__":
