@@ -1,7 +1,9 @@
+import asyncio
 import json
 import logging
 import os
 import pickle
+import time
 from pathlib import Path
 from typing import Any
 
@@ -9,6 +11,7 @@ import stats
 from awpy.analytics.nav import area_distance, find_closest_area
 from awpy.data import AREA_DIST_MATRIX, NAV
 from models.data_manager import DataManager
+from utils.discord_webhook import calculate_eta, send_progress_embed
 
 LOGGING_LEVEL = os.environ.get("LOGGING_INFO")
 if LOGGING_LEVEL == "INFO":
@@ -308,11 +311,11 @@ def _distance_internal(map_name, area_a, area_b):
     return current_bombsite_dist
 
 
-def main():
+async def main():
     dm = DataManager(stats.EXAMPLE_DEMO_PATH, do_validate=False)
+
     output_folder = Path(__file__).parent / "../graphs/" / stats.EXAMPLE_DEMO_PATH.stem
     output_filename_template = str(output_folder / "graph-rounds-%d.pkl")
-
     output_folder.mkdir(parents=True, exist_ok=True)
 
     logger.info(
@@ -340,10 +343,27 @@ def main():
         with open(tactic_path, "r") as f:
             strategy_labels = json.load(f)
 
+    start_time = time.time()
     graphs_total = 0
     for round_idx in range(dm.get_round_count()):
         output_filename = output_filename_template % round_idx
         logger.info("Converting round %d to file %s." % (round_idx, output_filename))
+
+        # send progress embed
+        await send_progress_embed(
+            progress=round((round_idx) / dm.get_round_count() * 100, 2),
+            roundsTotal=dm.get_round_count(),
+            currentRound=round_idx,
+            eta=calculate_eta(
+                start_time=start_time,
+                current_round=round_idx,
+                rounds_framecount=dm.get_rounds_frame_count(),
+            ),
+            id=dm.get_match_id(),
+            sendSilent=(
+                round_idx not in [0, dm.get_round_count() - 1]
+            ),  # Send silent for first and last round
+        )
 
         # we need to swap mappings, because player sides switch here.
         # WARNING: This only works if teams player in MR15 setting.
@@ -362,4 +382,5 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    loop = asyncio.get_event_loop()
+    loop.run_until_complete(main())

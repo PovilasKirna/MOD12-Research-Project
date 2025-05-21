@@ -77,6 +77,12 @@ black = "^25.1.0"
 ruff = "^0.11.10"
 pytest = "^8.3.5"
 
+
+[tool.poetry.group.discord-webhook.dependencies]
+discord-py = "^2.5.2"
+asyncio = "^3.4.3"
+aiohttp = "^3.11.18"
+
 [build-system]
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"

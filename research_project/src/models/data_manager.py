@@ -101,6 +101,10 @@ class DataManager:
             )
         return frames[frame_index]
 
+    def get_rounds_frame_count(self) -> list[int]:
+        """Returns a list of the number of frames in each round."""
+        return [len(self._get_frames(i)) for i in range(self.get_round_count())]
+
     def get_map_name(self) -> str:
         """Returns the name of the map in the Game object."""
         return self.data["mapName"]
