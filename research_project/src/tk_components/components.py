@@ -684,7 +684,7 @@ class TopBarMenu(ttk.Frame):
         response = simpledialog.askinteger(
             "Set Labeller Default Frame Number",
             "Enter the frame number:",
-            initialvalue=self.main_app.vm.labeller_frame_number,
+            initialvalue=self.main_app.vm.labeller_default_frame,
         )
         if response is not None:
             if response <= 0:
@@ -692,9 +692,9 @@ class TopBarMenu(ttk.Frame):
                     "Invalid Frame Number", "Frame number must be greater than 0."
                 )
                 return
-            self.main_app.vm.labeller_frame_number = response
+            self.main_app.vm.labeller_default_frame = response
 
-            print(self.main_app.vm.labeller_frame_number)
+            print(self.main_app.vm.labeller_default_frame)
 
             self.main_app.vm.revisualize()
             self.main_app.canvas.canvas.draw()
@@ -729,7 +729,7 @@ class TopBarMenu(ttk.Frame):
 
         # Ensure consistent ordering
         frame_range = range(min(selection_start, selection_end), max(selection_start, selection_end) + 1)
-        
+
         tactic_id = str(selection_tactic_id.get())
         for frame in frame_range:
             data[str(frame)] = tactic_id
@@ -774,7 +774,7 @@ class TopBarMenu(ttk.Frame):
         else:
             round_index.set(round_index.get() + 1)
         self.main_app.canvas.draw_round(round_index.get() - 1)
-        self.main_app.vm.current_frame_index = self.main_app.vm.labeller_frame_number
+        self.main_app.vm.current_frame_index = self.main_app.vm.labeller_default_frame
         self.main_app.vm.revisualize()
         self.main_app.reload_visualization_widgets()
 
@@ -785,7 +785,7 @@ class TopBarMenu(ttk.Frame):
         selection_start_frame = tk.IntVar(value=0)
         self.load_tactic_labels_list()
         self.main_app.canvas.draw_round(round_index.get() - 1)
-        self.main_app.vm.current_frame_index = self.main_app.vm.labeller_frame_number
+        self.main_app.vm.current_frame_index = self.main_app.vm.labeller_default_frame
         self.main_app.vm.revisualize()
         self.main_app.reload_visualization_widgets()
         labeller = tk.Toplevel()
