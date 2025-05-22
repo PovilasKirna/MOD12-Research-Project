@@ -704,7 +704,6 @@ class TopBarMenu(ttk.Frame):
 
     def save_frame_tactic(self, round_index, selection_start_frame, selection_tactic_id):
         if selection_tactic_id.get() == "none": # Handle no tactic selected
-            print("ya")
             return
         output_folder = Path.cwd() / "research_project" / "tactic_labels" / f"{self.main_app.dm.get_map_name()}"
         output_folder.mkdir(parents=True, exist_ok=True)
@@ -714,9 +713,9 @@ class TopBarMenu(ttk.Frame):
         # Load existing data if the file exists
         if output_file.exists():
             with open(output_file, "r") as f:
-                round_data = json.load(f)
+                round_tactic_data = json.load(f)
         else:
-            round_data = {}
+            round_tactic_data = {}
 
         selection_start = int(selection_start_frame.get())
         selection_end = self.main_app.vm.current_frame_index
@@ -726,12 +725,14 @@ class TopBarMenu(ttk.Frame):
 
         tactic_id = str(selection_tactic_id.get())
         for frame in frame_range:
-            round_data[str(frame)] = tactic_id
+            round_tactic_data[str(frame)] = tactic_id
 
         # Save json
         with open(output_file, "w") as f:
-            json.dump(round_data, f, indent=4)
+            json.dump(round_tactic_data, f, indent=4)
+            
         selection_tactic_id.set("none")
+        self.main_app.timeline_bar.reset_timeline_bar(round_index.get() - 1)
 
     def labeller_round_change(self, round_index, previous=None):
         if previous and round_index.get() == 1: # Handle pressing previous if first round
@@ -1016,6 +1017,7 @@ class TimelineBar(ttk.Frame):
 
         if round_index is not None:
             self._add_event_markers(round_index)
+            self.load_timeline_tactics(round_index)
 
     def _get_pixels_per_frame(self, round_index: int):
         """Returns the number of horizontal pixels in the timeline bar canvas allocated to each frame in round specified by `round_index`."""
@@ -1111,6 +1113,7 @@ class TimelineBar(ttk.Frame):
         self.visualized_round_index = round_index
         if round_index is not None:
             self._add_event_markers(round_index)
+            self.load_timeline_tactics(round_index)
 
     def _draw_progress_bar_fill_rectangle(self, x: int):
         """Draws a rectangle in the progress bar starting from the left and ending at the x-coordinate specified by `x`."""
@@ -1135,12 +1138,90 @@ class TimelineBar(ttk.Frame):
             self.visualized_round_index = round_index
             self.reset_timeline_bar(round_index)
             self._add_event_markers(round_index)
+            self.load_timeline_tactics(round_index)
 
         # Paint the canvas up to current_frame_index * pixels_per_tick in dark gray to indicate progress
         progress_bar_fill_length = int(
             current_frame_index * self._get_pixels_per_frame(round_index)
         )
         self._draw_progress_bar_fill_rectangle(progress_bar_fill_length)
+
+    def load_timeline_tactics(self, round_index: int):
+        if self.parent.dm is None:
+            raise ValueError("DataManager not initialized.")
+        if self.parent.vm is None:
+            raise ValueError("VisualizationManager not initialized.")
+        
+        round_index_adjusted = round_index + 1
+        output_file = Path.cwd() / "research_project" / "tactic_labels" / f"{self.parent.dm.get_map_name()}" / f"{self.parent.dm.get_match_id()}_{round_index_adjusted}.json"
+
+        if not output_file.exists():
+            return 
+
+        with open(output_file, "r") as f:
+            round_tactic_data = json.load(f)
+
+        if not round_tactic_data:
+            return
+
+        pixels_per_frame = self._get_pixels_per_frame(round_index)
+
+        # Force re-sort frames
+        sorted_frames = sorted((int(frame), tactic) for frame, tactic in round_tactic_data.items())
+
+        segments = []
+        current_tactic = None
+        start_frame = None
+        last_frame = None
+
+        for frame, tactic in sorted_frames:
+            if current_tactic is None: # Start segment
+                current_tactic = tactic
+                start_frame = frame
+                last_frame = frame
+            elif tactic == current_tactic and frame == last_frame + 1: # Continue segment
+                last_frame = frame
+            else: # Save segment and start again
+                segments.append((start_frame, last_frame, current_tactic))
+
+                current_tactic = tactic
+                start_frame = frame
+                last_frame = frame
+
+        if current_tactic is not None: # Add final segment
+            segments.append((start_frame, last_frame, current_tactic))
+
+        alternate_color = False
+        for start_frame, last_frame, tactic in segments:
+            if alternate_color:
+                tactic_color = "darkgoldenrod"
+                alternate_color = not alternate_color
+            else:
+                tactic_color = "goldenrod"
+                alternate_color = not alternate_color
+            last_frame += 1 # Adjust to cover the last frame of the tactic
+            tactic_start_position = start_frame * pixels_per_frame
+            tactic_end_position = last_frame * pixels_per_frame
+            tactic_label_position = ((start_frame + last_frame) / 2) * pixels_per_frame
+            tactic_marker = self._timeline_canvas.create_line(
+                tactic_start_position,
+                int(self._timeline_canvas.winfo_height() / 2),
+                tactic_end_position,
+                int(self._timeline_canvas.winfo_height() / 2),
+                fill=tactic_color,
+                width=10,
+                activewidth=15,
+                tags="test"
+            )
+            tooltip_text = f'{tactic}'
+            CanvasTooltip(self._timeline_canvas, tactic_marker, text=tooltip_text)
+            self._timeline_canvas.create_text(
+                tactic_label_position, 
+                int((self._timeline_canvas.winfo_height() / 2)-16), 
+                text=f"{tactic}",
+                fill=tactic_color
+            )
+        self._timeline_canvas.update()
 
 
 class GameStateLabel(ttk.Frame):
