@@ -44,7 +44,7 @@ class VisualizationManager:
         
         self.current_round_index = 0
         self.current_frame_index = 0
-        self.labeller_default_frame = 0
+        self.labeller_default_preivew_frame = 0
 
         if visualized_routine_length < 0:
             raise ValueError('Visualized routine length cannot be negative.')

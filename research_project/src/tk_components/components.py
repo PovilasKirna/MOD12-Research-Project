@@ -285,7 +285,7 @@ class TopBarMenu(ttk.Frame):
         predictions_menu.add_separator()
         predictions_menu.add_command(
             label="Set Labeller Default Frame Number",
-            command=self.set_labeller_frame_number,
+            command=self.set_labeller_default_preview_frame,
         )
         predictions_menu.add_separator()
         predictions_menu.add_command(
@@ -675,29 +675,23 @@ class TopBarMenu(ttk.Frame):
     def load_tactic_labels_file(self):
         """Stub func"""
 
-    def set_labeller_frame_number(self):
-        """Stub func"""
-        """Prompts the user for a desired routine length and sets the VisualizationManager's routine length to that value."""
+    def set_labeller_default_preview_frame(self):
+        """Prompts the user for a desired labeller default frame that is previewed when a round is instantiated and sets the VisualizationManager's labeller default preview frame to that value."""
         if self.main_app.vm is None:
             raise ValueError("VisualizationManager not initialized.")
 
         response = simpledialog.askinteger(
-            "Set Labeller Default Frame Number",
+            "Set Labeller Default Preview Frame Number",
             "Enter the frame number:",
-            initialvalue=self.main_app.vm.labeller_default_frame,
+            initialvalue=self.main_app.vm.labeller_default_preivew_frame,
         )
         if response is not None:
-            if response <= 0:
+            if response < 0:
                 messagebox.showerror(
-                    "Invalid Frame Number", "Frame number must be greater than 0."
+                    "Invalid Frame Number", "Frame number must be greater or equal to 0."
                 )
                 return
-            self.main_app.vm.labeller_default_frame = response
-
-            print(self.main_app.vm.labeller_default_frame)
-
-            self.main_app.vm.revisualize()
-            self.main_app.canvas.canvas.draw()
+            self.main_app.vm.labeller_default_preivew_frame = response
 
     def load_tactic_labels_list(self):
         input_folder = Path.cwd() / "research_project" / "tactic_labels" / "labels.json"
@@ -709,20 +703,17 @@ class TopBarMenu(ttk.Frame):
         selection_tactic_id.set(str(tactic_id))
 
     def save_frame_tactic(self, round_index, selection_start_frame, selection_tactic_id):
-        #print(f"{round_index.get()} : {self.main_app.vm.current_frame_index} : {selection_tactic_id.get()}")
-        map_name = self.main_app.dm.get_map_name()
-        match_id = self.main_app.dm.get_match_id()
-        output_folder = Path.cwd() / "research_project" / "tactic_labels" / map_name
+        output_folder = Path.cwd() / "research_project" / "tactic_labels" / f"{self.main_app.dm.get_map_name()}"
         output_folder.mkdir(parents=True, exist_ok=True)
 
-        output_file = output_folder / f"{match_id}_{round_index.get()}.json"
+        output_file = output_folder / f"{self.main_app.dm.get_match_id()}_{round_index.get()}.json"
 
         # Load existing data if the file exists
         if output_file.exists():
             with open(output_file, "r") as f:
-                data = json.load(f)
+                round_data = json.load(f)
         else:
-            data = {}
+            round_data = {}
 
         selection_start = int(selection_start_frame.get())
         selection_end = self.main_app.vm.current_frame_index
@@ -732,49 +723,26 @@ class TopBarMenu(ttk.Frame):
 
         tactic_id = str(selection_tactic_id.get())
         for frame in frame_range:
-            data[str(frame)] = tactic_id
+            round_data[str(frame)] = tactic_id
 
         # Save json
         with open(output_file, "w") as f:
-            json.dump(data, f, indent=4)
+            json.dump(round_data, f, indent=4)
         selection_tactic_id.set("none")
 
-    def save_round_tactic(self, round_index, tactic_id):
-        """"""
-        map_name = self.main_app.dm.get_map_name()
-        match_id = self.main_app.dm.get_match_id()
-        print(f"{map_name} {match_id}")
-        output_folder = Path.cwd() / "research_project" / "tactic_labels" / map_name
-        output_folder.mkdir(parents=True, exist_ok=True)
-
-        output_file = output_folder / f"{match_id}.json"
-
-        # Load existing data if the file exists
-        if output_file.exists():
-            with open(output_file, "r") as f:
-                data = json.load(f)
-        else:
-            data = {}
-
-        # Update the data with the new tactic
-        data[str(round_index.get())] = tactic_id
-
-        # Save json
-        with open(output_file, "w") as f:
-            json.dump(data, f, indent=4)
-        self.labeller_round_change(round_index)
-
     def labeller_round_change(self, round_index, previous=None):
-        if previous and round_index.get() == 1:
+        if previous and round_index.get() == 1: # Handle pressing previous if first round
             return
         elif previous:
             round_index.set(round_index.get() - 1)
-        elif round_index.get() == self.main_app.dm.get_round_count():
+        elif round_index.get() == self.main_app.dm.get_round_count(): # Handle pressing next if last round
             return
         else:
             round_index.set(round_index.get() + 1)
+        
         self.main_app.canvas.draw_round(round_index.get() - 1)
-        self.main_app.vm.current_frame_index = self.main_app.vm.labeller_default_frame
+        self.main_app.vm.current_frame_index = self.main_app.vm.labeller_default_preivew_frame
+
         self.main_app.vm.revisualize()
         self.main_app.reload_visualization_widgets()
 
@@ -785,22 +753,22 @@ class TopBarMenu(ttk.Frame):
         selection_start_frame = tk.IntVar(value=0)
         self.load_tactic_labels_list()
         self.main_app.canvas.draw_round(round_index.get() - 1)
-        self.main_app.vm.current_frame_index = self.main_app.vm.labeller_default_frame
+        self.main_app.vm.current_frame_index = self.main_app.vm.labeller_default_preivew_frame
         self.main_app.vm.revisualize()
         self.main_app.reload_visualization_widgets()
         labeller = tk.Toplevel()
-        tk.Label(labeller, text="Current round").pack(pady=5)
-        tk.Label(labeller, textvariable=round_index).pack(pady=7)
+        tk.Label(labeller, text="Current round").pack(pady=4)
+        tk.Label(labeller, textvariable=round_index).pack(pady=4)
         tk.Button(
             labeller,
             text="Previous Round",
             command=lambda: self.labeller_round_change(round_index, True),
-        ).pack(padx=5, pady=12)
+        ).pack(padx=5, pady=5)
         tk.Button(
             labeller,
             text="Next Round",
             command=lambda: self.labeller_round_change(round_index),
-        ).pack(padx=15, pady=12)
+        ).pack(padx=15, pady=5)
         tk.Label(labeller, text="Selected tactic").pack(pady=15)
         tk.Label(labeller, textvariable=selection_tactic_id).pack(pady=17)
         tk.Button(
@@ -819,7 +787,6 @@ class TopBarMenu(ttk.Frame):
                     selection_start_frame, selection_tactic_id, tactic_id
                 ),
             ).pack(pady=5)
-
 
 class CanvasPanel(ttk.Frame):
     """Panel for displaying plots."""
