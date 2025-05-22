@@ -1070,7 +1070,7 @@ class TimelineBar(ttk.Frame):
 
         kill_event_color: dict[SideType, str] = {
             SideType.T: "goldenrod",
-            SideType.CT: "darkblue",
+            SideType.CT: "steelblue",
         }
 
         # Only drawing kill + bomb events for now
@@ -1120,7 +1120,7 @@ class TimelineBar(ttk.Frame):
         """Draws a rectangle in the progress bar starting from the left and ending at the x-coordinate specified by `x`."""
         self._timeline_canvas.delete("progress")
         self._timeline_canvas.create_rectangle(
-            0, 0, x, self._timeline_canvas.winfo_height(), fill="gray", tags="progress"
+            0, 0, x, self._timeline_canvas.winfo_height(), fill="lightgray", tags="progress"
         )
         self._timeline_canvas.tag_lower(
             "progress"
@@ -1141,7 +1141,7 @@ class TimelineBar(ttk.Frame):
             self._add_event_markers(round_index)
             self.load_timeline_tactics(round_index)
 
-        # Paint the canvas up to current_frame_index * pixels_per_tick in dark gray to indicate progress
+        # Paint the canvas up to current_frame_index * pixels_per_tick in gray to indicate progress
         progress_bar_fill_length = int(
             current_frame_index * self._get_pixels_per_frame(round_index)
         )
