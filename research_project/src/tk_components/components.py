@@ -704,10 +704,45 @@ class TopBarMenu(ttk.Frame):
         with open(input_folder, "r") as f:
             self.tactic_labels = json.load(f)
 
+    def start_frame_tactic(self, selection_start_frame, selection_tactic_id, tactic_id):
+        selection_start_frame.set(int(self.main_app.vm.current_frame_index))
+        selection_tactic_id.set(str(tactic_id))
+
+    def save_frame_tactic(self, round_index, selection_start_frame, selection_tactic_id):
+        #print(f"{round_index.get()} : {self.main_app.vm.current_frame_index} : {selection_tactic_id.get()}")
+        map_name = self.main_app.dm.get_map_name()
+        match_id = self.main_app.dm.get_match_id()
+        output_folder = Path.cwd() / "research_project" / "tactic_labels" / map_name
+        output_folder.mkdir(parents=True, exist_ok=True)
+
+        output_file = output_folder / f"{match_id}_{round_index.get()}.json"
+
+        # Load existing data if the file exists
+        if output_file.exists():
+            with open(output_file, "r") as f:
+                data = json.load(f)
+        else:
+            data = {}
+
+        selection_start = int(selection_start_frame.get())
+        selection_end = self.main_app.vm.current_frame_index
+
+        # Ensure consistent ordering
+        frame_range = range(min(selection_start, selection_end), max(selection_start, selection_end) + 1)
+        
+        tactic_id = str(selection_tactic_id.get())
+        for frame in frame_range:
+            data[str(frame)] = tactic_id
+
+        # Save json
+        with open(output_file, "w") as f:
+            json.dump(data, f, indent=4)
+        selection_tactic_id.set("none")
+
     def save_round_tactic(self, round_index, tactic_id):
         """"""
         map_name = self.main_app.dm.get_map_name()
-        match_id = self.main_app.dm.get_match_id()  # FIX MATCH ID !!!!
+        match_id = self.main_app.dm.get_match_id()
         print(f"{map_name} {match_id}")
         output_folder = Path.cwd() / "research_project" / "tactic_labels" / map_name
         output_folder.mkdir(parents=True, exist_ok=True)
@@ -722,12 +757,11 @@ class TopBarMenu(ttk.Frame):
             data = {}
 
         # Update the data with the new tactic
-        data[round_index.get()] = tactic_id
+        data[str(round_index.get())] = tactic_id
 
         # Save json
         with open(output_file, "w") as f:
             json.dump(data, f, indent=4)
-        print(f"Saved tactic '{tactic_id}' for round {round_index} in {output_file}")
         self.labeller_round_change(round_index)
 
     def labeller_round_change(self, round_index, previous=None):
@@ -735,8 +769,6 @@ class TopBarMenu(ttk.Frame):
             return
         elif previous:
             round_index.set(round_index.get() - 1)
-        elif round_index.get() == self.main_app.dm.get_round_count():
-            return
         elif round_index.get() == self.main_app.dm.get_round_count():
             return
         else:
@@ -749,7 +781,8 @@ class TopBarMenu(ttk.Frame):
     def open_tactic_labeller(self):
         """Stub func"""
         round_index = tk.IntVar(value=1)
-        self.load_tactic_labels_list()
+        selection_tactic_id = tk.StringVar(value="none")
+        selection_start_frame = tk.IntVar(value=0)
         self.load_tactic_labels_list()
         self.main_app.canvas.draw_round(round_index.get() - 1)
         self.main_app.vm.current_frame_index = self.main_app.vm.labeller_frame_number
@@ -768,14 +801,22 @@ class TopBarMenu(ttk.Frame):
             text="Next Round",
             command=lambda: self.labeller_round_change(round_index),
         ).pack(padx=15, pady=12)
-        tk.Label(labeller, text="Saved tactic").pack(pady=15)
-        tk.Label(labeller, text="tactic").pack(pady=17)
+        tk.Label(labeller, text="Selected tactic").pack(pady=15)
+        tk.Label(labeller, textvariable=selection_tactic_id).pack(pady=17)
+        tk.Button(
+            labeller, 
+            text="SAVE TACTIC", 
+            command=lambda: self.save_frame_tactic(
+                round_index, selection_start_frame, selection_tactic_id
+            ),
+        ).pack(pady=5)
+        tk.Label(labeller, text="Tactics").pack(pady=15)
         for tactic in self.tactic_labels:
             tk.Button(
                 labeller,
                 text=tactic["name"],
-                command=lambda tid=tactic["id"]: self.save_round_tactic(
-                    round_index, tid
+                command=lambda tactic_id=tactic["id"]: self.start_frame_tactic(
+                    selection_start_frame, selection_tactic_id, tactic_id
                 ),
             ).pack(pady=5)
 
