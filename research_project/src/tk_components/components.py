@@ -703,6 +703,9 @@ class TopBarMenu(ttk.Frame):
         selection_tactic_id.set(str(tactic_id))
 
     def save_frame_tactic(self, round_index, selection_start_frame, selection_tactic_id):
+        if selection_tactic_id.get() == "none": # Handle no tactic selected
+            print("ya")
+            return
         output_folder = Path.cwd() / "research_project" / "tactic_labels" / f"{self.main_app.dm.get_map_name()}"
         output_folder.mkdir(parents=True, exist_ok=True)
 
