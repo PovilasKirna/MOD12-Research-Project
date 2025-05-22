@@ -747,7 +747,6 @@ class TopBarMenu(ttk.Frame):
         self.main_app.reload_visualization_widgets()
 
     def open_tactic_labeller(self):
-        """Stub func"""
         round_index = tk.IntVar(value=1)
         selection_tactic_id = tk.StringVar(value="none")
         selection_start_frame = tk.IntVar(value=0)
@@ -757,36 +756,51 @@ class TopBarMenu(ttk.Frame):
         self.main_app.vm.revisualize()
         self.main_app.reload_visualization_widgets()
         labeller = tk.Toplevel()
-        tk.Label(labeller, text="Current round").pack(pady=4)
-        tk.Label(labeller, textvariable=round_index).pack(pady=4)
+        tk.Label(labeller, text="Current round").pack(pady=0)
+        tk.Label(labeller, textvariable=round_index).pack(pady=0)
+        # Create a container frame for the buttons
+        button_frame = tk.Frame(labeller)
+        button_frame.pack(pady=0)
+
+        # Previous Round button
         tk.Button(
-            labeller,
-            text="Previous Round",
+            button_frame,
+            text="Previous",
+            width=10,
+            height=2,
             command=lambda: self.labeller_round_change(round_index, True),
-        ).pack(padx=5, pady=5)
+        ).pack(side="left", padx=0)
+
+        # Next Round button
         tk.Button(
-            labeller,
-            text="Next Round",
+            button_frame,
+            text="Next",
+            width=10,
+            height=2,
             command=lambda: self.labeller_round_change(round_index),
-        ).pack(padx=15, pady=5)
-        tk.Label(labeller, text="Selected tactic").pack(pady=15)
-        tk.Label(labeller, textvariable=selection_tactic_id).pack(pady=17)
-        tk.Button(
-            labeller, 
-            text="SAVE TACTIC", 
-            command=lambda: self.save_frame_tactic(
-                round_index, selection_start_frame, selection_tactic_id
-            ),
-        ).pack(pady=5)
-        tk.Label(labeller, text="Tactics").pack(pady=15)
+        ).pack(side="left", padx=0)
+        tk.Label(labeller, text="Tactics").pack(pady=0)
         for tactic in self.tactic_labels:
             tk.Button(
                 labeller,
                 text=tactic["name"],
+                width = 24,
+                height = 2,
                 command=lambda tactic_id=tactic["id"]: self.start_frame_tactic(
                     selection_start_frame, selection_tactic_id, tactic_id
                 ),
-            ).pack(pady=5)
+            ).pack(pady=2)
+        tk.Label(labeller, text="Selected tactic").pack(pady=1)
+        tk.Label(labeller, textvariable=selection_tactic_id).pack(pady=1)
+        tk.Button(
+            labeller, 
+            text="SAVE TACTIC", 
+            width = 24,
+            height = 3,
+            command=lambda: self.save_frame_tactic(
+                round_index, selection_start_frame, selection_tactic_id
+            ),
+        ).pack(pady=1)
 
 class CanvasPanel(ttk.Frame):
     """Panel for displaying plots."""
