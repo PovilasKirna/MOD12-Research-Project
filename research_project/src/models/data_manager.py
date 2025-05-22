@@ -1,7 +1,8 @@
 import json
 import re
+import time
 from collections import defaultdict
-from logging import Logger
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Generator
 
@@ -16,8 +17,6 @@ from models.team_routines import BothTeamsRoutines, TeamRoutines
 from models.team_scores import TeamScore
 from pydantic import TypeAdapter, ValidationError
 
-data_manager_logger = Logger("DataManager")
-
 # Path to a demo file for testing
 EXAMPLE_DEMO_PATH = (
     Path(__file__).parent / "../../demos/esta/0013db25-4444-452b-980b-7702dc6fb810.json"
@@ -28,16 +27,17 @@ game_validator = TypeAdapter(Game)
 
 
 # This function exists outside of DataManager in case we want to use it elsewhere
-def _load_game_data(file_path: Path, do_validate: bool = True) -> Game:
+def _load_game_data(file_path: Path, do_validate: bool = True, logger=None) -> Game:
     """Loads a JSON file containing a Game object. If `do_validate` is True, the data will be validated against the Game schema."""
     with open(file_path, "r") as file:
         try:
             data = json.load(file)
             if do_validate:
                 return game_validator.validate_python(data)
-            data_manager_logger.warn(
-                "Demo data was not validated against the Game schema on load. This may cause issues later on."
-            )
+            if logger:
+                logger.warning(
+                    "Demo data was not validated against the Game schema on load. This may cause issues later on."
+                )
             return data
         except ValidationError as e:
             # TODO: Maybe handle this better
@@ -50,9 +50,10 @@ class DataManager:
     file_path: Path  # Path to the demo file being parsed by awpy
     data: Game
 
-    def __init__(self, file_path: Path, do_validate: bool = True):
+    def __init__(self, file_path: Path, logger=None, do_validate: bool = True):
         self.file_path = file_path
-        self.data = _load_game_data(file_path, do_validate)
+        self.logger = logger
+        self.data = _load_game_data(file_path, do_validate, logger)
         self.mappingT = None
         self.mappingCT = None
 
@@ -90,6 +91,13 @@ class DataManager:
         frames = round_data["frames"]
         if frames is None:
             raise ValueError("No frames found in round")
+        return frames
+
+    def get_all_frames(self) -> list[GameFrame]:
+        """Returns a list of all GameFrame objects in the Game object."""
+        frames = []
+        for round_index in range(self.get_round_count()):
+            frames.extend(self._get_frames(round_index))
         return frames
 
     def get_frame(self, round_index: int, frame_index: int) -> GameFrame:
@@ -380,6 +388,20 @@ class DataManager:
     def get_parse_rate(self) -> int:
         """Returns the rate at which the demo was parsed."""
         return self.data["parserParameters"]["parseRate"]
+
+    def get_estimated_finish(self, start_time: float, processed_frames: int) -> str:
+        """Returns an ETA string based on elapsed time and actual frame progress."""
+        total_frames = len(self.get_all_frames())
+        if total_frames == 0 or processed_frames == 0:
+            return "Calculating ETA..."
+
+        progress = processed_frames / total_frames
+        elapsed = time.time() - start_time
+        estimated_total_time = elapsed / progress
+        remaining_time = estimated_total_time - elapsed
+        eta = timedelta(seconds=max(0, int(remaining_time)))
+        finish_time = datetime.now() + eta
+        return f"Estimated finish: {finish_time.strftime('%H:%M')} (ETA: {str(eta)})"
 
 
 def get_map_name_from_demo_file_without_parsing(file_path: Path) -> str | None:

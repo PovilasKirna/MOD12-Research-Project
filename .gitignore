@@ -8,3 +8,7 @@ poetry.lock
 .dust2_unlisted_demos
 .DS_Store
 logs/
+research_project/demos/
+research_project/graphs/
+.env.local
+.env
