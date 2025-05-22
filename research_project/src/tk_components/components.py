@@ -730,9 +730,10 @@ class TopBarMenu(ttk.Frame):
         # Save json
         with open(output_file, "w") as f:
             json.dump(round_tactic_data, f, indent=4)
-            
+
         selection_tactic_id.set("none")
         self.main_app.timeline_bar.reset_timeline_bar(round_index.get() - 1)
+        self.main_app.timeline_bar.set_timeline_bar_progress(round_index.get() - 1, selection_end)
 
     def labeller_round_change(self, round_index, previous=None):
         if previous and round_index.get() == 1: # Handle pressing previous if first round
