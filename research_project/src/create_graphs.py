@@ -2,6 +2,7 @@ import asyncio
 import functools
 import json
 import logging
+import os
 import pickle
 import time
 from concurrent.futures import ProcessPoolExecutor
@@ -439,20 +440,77 @@ def progress_monitor(queue, total_map):
         pbar.close()
 
 
+def get_env_variables():
+    batch_size = int(os.environ.get("CREATE_GRAPHS_PROCESSES_COUNT", 10))
+    demo_filenames_path = os.environ.get("DUST2_DEMOS_FILENAMES_PATH")
+    create_graphs_filenames = os.environ.get("CREATE_GRAPHS_FILENAMES_PATH")
+    create_graphs_demo_dir = os.environ.get("CREATE_GRAPHS_DEMO_DIR")
+
+    if not create_graphs_demo_dir:
+        raise ValueError("Environment variable CREATE_GRAPHS_DEMO_DIR is not set.")
+    if not os.path.exists(create_graphs_demo_dir):
+        raise ValueError(
+            f"Demo directory {create_graphs_demo_dir} does not exist. Please check the path."
+        )
+    if not demo_filenames_path:
+        raise ValueError("Environment variable DUST2_DEMOS_FILENAMES_PATH is not set.")
+    if not os.path.exists(demo_filenames_path):
+        raise ValueError(
+            f"File list path {demo_filenames_path} does not exist. Please check the path."
+        )
+    if not create_graphs_filenames:
+        raise ValueError(
+            "Environment variable CREATE_GRAPHS_FILENAMES_PATH is not set."
+        )
+    if not os.path.exists(create_graphs_filenames):
+        raise ValueError(
+            f"File list path {create_graphs_filenames} does not exist. Please check the path."
+        )
+    if batch_size:
+        print(f"Using {batch_size} processes for graph creation.")
+    else:
+        print(
+            "Environment variable CREATE_GRAPHS_PROCESSES_COUNT is not set. Using default of 1 process."
+        )
+        batch_size = 1
+    return (
+        batch_size,
+        demo_filenames_path,
+        create_graphs_filenames,
+        create_graphs_demo_dir,
+    )
+
+
 async def main():
-    demo_filenames = get_demo_files_from_list("file_paths.json", compressed=False)
+    batch_size, demo_filenames_path, create_graphs_filenames, create_graphs_demo_dir = (
+        get_env_variables()
+    )
+
+    demo_filenames = get_demo_files_from_list(demo_filenames_path, compressed=False)
+
+    print(f"Found {len(demo_filenames)} demo filenames in the demo filenames list.")
+
+    with open(create_graphs_filenames, "r") as f:
+        filtered_demos = json.load(f)
+    print(
+        f"Found {len(filtered_demos)} demo filenames in the scheduled process file list."
+    )
 
     demo_pathnames = [
-        "research_project/demos/dust2/" + demo_filename
-        for demo_filename in demo_filenames
+        create_graphs_demo_dir + demo_filename
+        for demo_filename in filtered_demos
+        if os.path.exists(create_graphs_demo_dir + demo_filename)
     ]
 
-    batch_size = 10
+    print(
+        f"Found {len(demo_pathnames)} demo files in '{create_graphs_demo_dir}' directory."
+    )
+    print(f"Processing {len(demo_pathnames)}/{len(filtered_demos)} demo files...")
 
     # Calculate total frames per demo for progress bars
     total_map = {
         demo: len(DataManager(Path(demo), do_validate=False).get_all_frames())
-        for demo in demo_pathnames[:batch_size]
+        for demo in demo_pathnames
     }
     manager = Manager()
     queue = manager.Queue()
@@ -466,7 +524,7 @@ async def main():
                 executor,
                 functools.partial(process_single_demo_sync, demo, queue, demo),
             )
-            for demo in demo_pathnames[:batch_size]
+            for demo in demo_pathnames
         ]
         await asyncio.gather(*tasks)
 
