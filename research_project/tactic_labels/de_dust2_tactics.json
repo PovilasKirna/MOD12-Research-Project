@@ -16,8 +16,8 @@
 		"name": "Control Mid"
 	},	
 	{
-		"id": "t_control_b_lower_tunnel",
-		"name": "Control B Lower Tunnel"
+		"id": "t_control_b_lower_tunnels",
+		"name": "Control B Lower Tunnels"
 	},	
 	{
 		"id": "t_execute_a_long",
