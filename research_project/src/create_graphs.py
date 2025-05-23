@@ -115,7 +115,7 @@ WEAPON_ID_MAPPING = {  # TODO: add missing weapons
 def process_round(
     dm: DataManager,
     round_idx: int,
-    strategy_used: str = "unknown",
+    frame_tactic_map: dict[str, str] = None,
     queue=None,
     key=None,
     logger=None,
@@ -125,7 +125,6 @@ def process_round(
 
     # all variables on the round level --> graph data
     round_data = {key: round[key] for key in KEYS_ROUND_LEVEL}
-    round_data["strategy_used"] = strategy_used
 
     frames = dm._get_frames(round_idx)
 
@@ -148,8 +147,16 @@ def process_round(
                 queue.put((key, 1))
             continue
 
+        # tactic label for this frame
+        tactic = (
+            frame_tactic_map.get(str(frame_idx), "unknown")
+            if frame_tactic_map
+            else "unknown"
+        )
+
         # all variables on the frame level are added to the graph level data.
         graph_data = {key: frame[key] for key in KEYS_FRAME_LEVEL} | round_data
+        graph_data["strategy_used"] = tactic
 
         # include estimated seconds from bomb data for each frame
         if (
@@ -346,25 +353,14 @@ async def process_single_demo(demo_path, queue=None, key=None):
         % (dm.get_match_id(), dm.get_round_count())
     )
 
-    # load the labels for the match
-    strategy_labels = {}
-    tactic_path = (
+    # tactic label directory for per-frame labeling
+    tactic_dir = (
         Path.cwd()
         / "research_project"
         / "tactic_labels"
         / dm.get_map_name()
-        / f"{dm.get_match_id()}.json"
+        / dm.get_match_id()
     )
-    if not tactic_path.exists():
-        logger.warning(
-            "No tactic labels found for match %s. Using default label 'unknown'."
-            % dm.get_match_id()
-        )
-    else:
-        logger.info("Loading tactic labels from %s." % tactic_path)
-        # load the labels for the match
-        with open(tactic_path, "r") as f:
-            strategy_labels = json.load(f)
 
     start_time = time.time()
     total_frames = len(dm.get_all_frames())
@@ -395,12 +391,21 @@ async def process_single_demo(demo_path, queue=None, key=None):
         if round_idx == 15:
             dm.swap_player_mapping()
 
-        # process round
-        round_label = strategy_labels.get(str(round_idx + 1), "unknown")
+        # Load per-frame tactic labels for this round
+        round_label_path = tactic_dir / f"{dm.get_match_id()}_{round_idx + 1}.json"
+        if round_label_path.exists():
+            with open(round_label_path, "r") as f:
+                frame_tactic_map = json.load(f)
+        else:
+            logger.warning(
+                f"No tactic labels found for round {round_idx + 1}. Defaulting to 'unknown'."
+            )
+            frame_tactic_map = {}
+
         graphs = process_round(
             dm,
             round_idx,
-            strategy_used=round_label,
+            frame_tactic_map=frame_tactic_map,
             queue=queue,
             key=key,
             logger=logger,
