@@ -694,7 +694,7 @@ class TopBarMenu(ttk.Frame):
             self.main_app.vm.labeller_default_preivew_frame = response
 
     def load_tactic_labels_list(self):
-        input_folder = Path.cwd() / "research_project" / "tactic_labels" / "labels.json"
+        input_folder = Path.cwd() / "research_project" / "tactic_labels" / "de_dust2_tactics.json"
         with open(input_folder, "r") as f:
             self.tactic_labels = json.load(f)
 
