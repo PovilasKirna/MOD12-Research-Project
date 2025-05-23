@@ -12,3 +12,4 @@ research_project/demos/
 research_project/graphs/
 .env.local
 .env
+file_paths.json

@@ -5,8 +5,8 @@ import os
 from typing import List
 
 import requests
+from extract_demos import extract_single_xz_json_file
 from tqdm import tqdm
-from utils.extract_demos import extract_single_xz_json_file
 
 
 def download_file(url: str, output_path: str) -> None:
@@ -53,7 +53,7 @@ def get_demo_files_from_list(demo_files_list_path: str, compressed: bool) -> Lis
 
 def main():
     repo_url = "https://github.com/pnxenopoulos/esta/raw/refs/heads/main/data/"
-    folders = ["lan", "online"]
+    folders = ["lan/", "online/"]
 
     demo_files_list = "file_paths.json"
     output_directory = "research_project/demos/dust2"
