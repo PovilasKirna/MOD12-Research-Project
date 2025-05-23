@@ -29,12 +29,10 @@ class GraphDataset(Dataset):
                     else:
                         self.all_graphs.append((graphs_in_file, file_path))
 
-        with open(
-            "research_project/tactic_labels/de_dust2/00e7fec9-cee0-430f-80f4-6b50443ceacd.json",
-            "r",
-        ) as f:
+        with open("research_project\\tactic_labels\de_dust2_tactics.json", "r") as f:
             self.label_mapping = json.load(f)
-        self.unique_labels = sorted(set(self.label_mapping.values()))
+
+        self.unique_labels = {item["id"]: item["name"] for item in self.label_mapping}
         self.label_to_id = {label: idx for idx, label in enumerate(self.unique_labels)}
 
         self.processed_graphs = []

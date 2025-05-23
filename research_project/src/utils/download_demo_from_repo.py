@@ -5,8 +5,8 @@ import os
 from typing import List
 
 import requests
-from extract_demos import extract_single_xz_json_file
 from tqdm import tqdm
+from utils.extract_demos import extract_single_xz_json_file
 
 
 def download_file(url: str, output_path: str) -> None:
