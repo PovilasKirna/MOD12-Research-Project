@@ -35,6 +35,7 @@ def export_file_names_to_json(file_names: List[str], output_file: str) -> None:
 
 
 def main():
+    # deprecated TODO: fix this
     directory = "/Users/home/Desktop/University/MOD12/git/research-project/research_project/demos/.dust2_unlisted_demos"  # Replace with your directory path
     output_file = "file_paths.json"  # Replace with your desired output file name
 

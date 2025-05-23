@@ -3,7 +3,10 @@ import os
 from typing import List
 
 import requests
+from dotenv import load_dotenv
 from tqdm import tqdm
+
+load_dotenv()
 
 if __name__ == "__main__":
     from extract_demos import extract_single_xz_json_file
@@ -54,11 +57,11 @@ def get_demo_files_from_list(demo_files_list_path: str, compressed: bool) -> Lis
 
 
 def main():
-    repo_url = "https://github.com/pnxenopoulos/esta/raw/refs/heads/main/data/"
+    repo_url = os.getenv("ESTA_DATASET_REPOSITORY_URL")
     folders = ["lan/", "online/"]
 
-    demo_files_list = "file_paths.json"
-    output_directory = "research_project/demos/dust2"
+    demo_files_list = os.getenv("DUST2_DEMOS_FILENAMES_PATH")
+    output_directory = os.getenv("CREATE_GRAPHS_DEMO_DIR")
     os.makedirs(output_directory, exist_ok=True)
 
     demo_files = get_demo_files_from_list(demo_files_list, compressed=True)
