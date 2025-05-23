@@ -705,10 +705,12 @@ class TopBarMenu(ttk.Frame):
     def save_frame_tactic(self, round_index, selection_start_frame, selection_tactic_id):
         if selection_tactic_id.get() == "none": # Handle no tactic selected
             return
-        output_folder = Path.cwd() / "research_project" / "tactic_labels" / f"{self.main_app.dm.get_map_name()}"
+        match_id = self.main_app.dm.get_match_id()
+
+        output_folder = Path.cwd() / "research_project" / "tactic_labels" / f"{self.main_app.dm.get_map_name()}" / match_id
         output_folder.mkdir(parents=True, exist_ok=True)
 
-        output_file = output_folder / f"{self.main_app.dm.get_match_id()}_{round_index.get()}.json"
+        output_file = output_folder / f"{match_id}_{round_index.get()}.json"
 
         # Load existing data if the file exists
         if output_file.exists():
@@ -1164,7 +1166,9 @@ class TimelineBar(ttk.Frame):
             raise ValueError("VisualizationManager not initialized.")
         
         round_index_adjusted = round_index + 1
-        output_file = Path.cwd() / "research_project" / "tactic_labels" / f"{self.parent.dm.get_map_name()}" / f"{self.parent.dm.get_match_id()}_{round_index_adjusted}.json"
+
+        match_id = self.parent.dm.get_match_id()
+        output_file = Path.cwd() / "research_project" / "tactic_labels" / f"{self.parent.dm.get_map_name()}" / match_id / f"{match_id}_{round_index_adjusted}.json"
 
         if not output_file.exists():
             return 
