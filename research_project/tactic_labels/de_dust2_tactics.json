@@ -1,0 +1,62 @@
+[
+	{
+		"id": "t_setup_a",
+		"name": "Setup A"
+	},	
+	{
+		"id": "t_setup_b",
+		"name": "Setup B"
+	},	
+	{
+		"id": "t_control_a_long",
+		"name": "Control A Long"
+	},	
+	{
+		"id": "t_control_mid",
+		"name": "Control Mid"
+	},	
+	{
+		"id": "t_control_lower_tunnel",
+		"name": "Control Lower Tunnel"
+	},	
+	{
+		"id": "t_execute_a_long",
+		"name": "Execute A Long"
+	},	
+	{
+		"id": "t_execute_a_short",
+		"name": "Execute A Short"
+	},	
+	{
+		"id": "t_execute_mid_to_b",
+		"name": "Execute Mid to B"
+	},	
+	{
+		"id": "t_execute_b",
+		"name": "Execute B"
+	},	
+	{
+		"id": "t_rush_a_long",
+		"name": "Rush A Long"
+	},	
+	{
+		"id": "t_rush_a_short",
+		"name": "Rush A Short"
+	},	
+	{
+		"id": "t_rush_mid_to_b",
+		"name": "Rush Mid to B"
+	},	
+	{
+		"id": "t_rush_b",
+		"name": "Rush B"
+	},	
+	{
+		"id": "t_fake_a",
+		"name": "Fake A"
+	},	
+	{
+		"id": "t_fake_b",
+		"name": "Fake B"
+	}
+]
