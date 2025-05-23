@@ -1,45 +1,35 @@
 import asyncio
+import functools
 import json
 import logging
-import os
 import pickle
 import time
+from concurrent.futures import ProcessPoolExecutor
+from multiprocessing import Manager, Process
 from pathlib import Path
 from typing import Any
 
 import stats
 from awpy.analytics.nav import area_distance, find_closest_area
 from awpy.data import AREA_DIST_MATRIX, NAV
+from dotenv import load_dotenv
 from models.data_manager import DataManager
-from utils.discord_webhook import calculate_eta, send_progress_embed
+from tqdm import tqdm
+from utils.discord_webhook import send_progress_embed
+from utils.download_demo_from_repo import get_demo_files_from_list
+from utils.logging_config import get_logger
 
-LOGGING_LEVEL = os.environ.get("LOGGING_INFO")
-# Set up logger and suppress default console handlers
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG)  # capture everything, filter through handlers
-logging.getLogger("asyncio").setLevel(logging.WARNING)
+load_dotenv()
 
+# Remove any default root handlers (they print to console)
+for handler in logging.root.handlers[:]:
+    logging.root.removeHandler(handler)
 
-# Remove default handlers to prevent console output
-for handler in logger.handlers[:]:
-    logger.removeHandler(handler)
-
-# Set up file handler for warnings and above
-logs_output_folder = (
-    Path(__file__).parent / "../graphs/" / stats.EXAMPLE_DEMO_PATH.stem / "logs"
-)
-logs_output_folder.mkdir(parents=True, exist_ok=True)
-current_time = time.localtime()
-log_file_name = f"{current_time.tm_year}-{current_time.tm_mon:02d}-{current_time.tm_mday:02d}_{current_time.tm_hour:02d}-{current_time.tm_min:02d}-{current_time.tm_sec:02d}.log"
-log_file_path = logs_output_folder / log_file_name
-file_handler = logging.FileHandler(log_file_path)
-file_handler.setLevel(logging.DEBUG)
-file_formatter = logging.Formatter("%(asctime)s - %(levelname)s - %(message)s")
-file_handler.setFormatter(file_formatter)
-logger.addHandler(file_handler)
-
-# Disable propagation to root logger to suppress console output
-logger.propagate = False
+# Set root level to WARNING or higher (to suppress DEBUG logs)
+logging.basicConfig(level=logging.WARNING)
+logging.getLogger("asyncio").setLevel(logging.CRITICAL)
+logging.getLogger("discord").setLevel(logging.CRITICAL)
+logging.getLogger("discord.webhook.async_").setLevel(logging.CRITICAL)
 
 KEYS_ROUND_LEVEL = (
     "tFreezeTimeEndEqVal",
@@ -121,18 +111,13 @@ WEAPON_ID_MAPPING = {  # TODO: add missing weapons
 }
 
 
-def print_progress_bar(iteration, round, total, length=40):
-    percent = f"{100 * (iteration / float(total)):.1f}"
-    filled_length = int(length * iteration // total)
-    bar = "█" * filled_length + "-" * (length - filled_length)
-    print(
-        f"\rProcessing round {round} frames: |{bar}| {percent}% ({iteration}/{total})",
-        end="\r",
-    )
-
-
 def process_round(
-    dm: DataManager, round_idx: int, strategy_used: str = "unknown"
+    dm: DataManager,
+    round_idx: int,
+    strategy_used: str = "unknown",
+    queue=None,
+    key=None,
+    logger=None,
 ) -> list[list[Any]]:
     round = dm.get_game_round(round_idx)
     map_name = dm.get_map_name()
@@ -150,7 +135,7 @@ def process_round(
     graphs = []
     error_frame_count = 0
     total_frames = len(frames)
-    print_progress_bar(0, round_idx, total_frames)
+    # Remove local tqdm bar, progress will be reported via queue
     for frame_idx, frame in enumerate(frames):
         # check validity of frame
         valid_frame, err_text = stats.check_frame_validity(frame)
@@ -158,6 +143,8 @@ def process_round(
             logger.debug(
                 "Skipping frame %d entirely because %s." % (frame_idx, err_text)
             )
+            if queue and key:
+                queue.put((key, 1))
             continue
 
         # all variables on the frame level are added to the graph level data.
@@ -194,7 +181,6 @@ def process_round(
             nodes_data[player_idx] = node_data
 
         # add bomb node
-        #
         nodes_data[BOMB_NODE_INDEX] = dm.get_bomb_info(round_idx, frame_idx)
         nodes_data[BOMB_NODE_INDEX]["areaId"] = find_closest_area(
             map_name,
@@ -206,24 +192,21 @@ def process_round(
         ### Create Edge Data
         # computes distances to bombsite
         try:
-            distance_A, distance_B = distance_bombsites(dm, nodes_data)
+            distance_A, distance_B = distance_bombsites(dm, nodes_data, logger=logger)
         except ValueError as exc:
             logger.warning(
                 "Frame %d (%f%%): %s" % (frame_idx, frame_idx / total_frames, exc)
             )
             logger.exception(f"Round {round_idx}, Frame {frame_idx}: {exc}")
             error_frame_count += 1
+            if queue and key:
+                queue.put((key, 1))
             continue  # skip errors
-        for key in nodes_data.keys():
-            edges_data.append((key, BOMBSITE_A_NODE_INDEX, {"dist": distance_A[key]}))
-            edges_data.append((key, BOMBSITE_B_NODE_INDEX, {"dist": distance_B[key]}))
+        for k in nodes_data.keys():
+            edges_data.append((k, BOMBSITE_A_NODE_INDEX, {"dist": distance_A[k]}))
+            edges_data.append((k, BOMBSITE_B_NODE_INDEX, {"dist": distance_B[k]}))
 
         # compute distances pairwise
-        # CAUTION: distances from between 2 nodes can vary depending on direction (e.g., jump down, etc.).
-        #          this implies a digraph for which networkx provides classes.
-        #          As a result, we reverse the lists, so we start with bomb->player distance and end with player->bomb
-        #          distances. This could be adjusted later.
-        #          Update: currently switched to DiGraph and edges are double, one for each direction.
         for node_a in reversed(nodes_data.keys()):
             for node_b in reversed(nodes_data.keys()):
                 # ignore self loops
@@ -238,6 +221,7 @@ def process_round(
                                 map_name,
                                 nodes_data[node_a]["areaId"],
                                 nodes_data[node_b]["areaId"],
+                                logger=logger,
                             )
                         },
                     )
@@ -248,8 +232,8 @@ def process_round(
         nodes_data[BOMBSITE_B_NODE_INDEX] = {"nodeType": NODE_TYPE_TARGET_INDEX}
 
         # fill up all keys with empty values, because all nodes need same attributes for DGL
-        for key in nodes_data.keys():
-            nodes_data[key] = fill_keys(nodes_data[key])  # merging dicts creates a copy
+        for k in nodes_data.keys():
+            nodes_data[k] = fill_keys(nodes_data[k])  # merging dicts creates a copy
 
         # store data in convenient dict
         graph = {
@@ -258,9 +242,9 @@ def process_round(
             "edges_data": edges_data,
         }
         graphs.append(graph)
-        print_progress_bar(frame_idx + 1, round_idx, total_frames)
-    print("\n")
-
+        if queue and key:
+            queue.put((key, 1))
+    # print("\n")
     return graphs
 
 
@@ -273,8 +257,8 @@ def fill_keys(target: dict):
     return empty_dict | target  # right dict takes precedence
 
 
-def distance_bombsites(dm: DataManager, nodes: dict):
-    # logger.debug("Calculating shortest distances for %d nodes." % len(nodes))
+def distance_bombsites(dm: DataManager, nodes: dict, logger=None):
+    logger.debug("Calculating shortest distances for %d nodes." % len(nodes))
     map_name = dm.get_map_name()
 
     if map_name not in NAV:
@@ -318,7 +302,7 @@ def distance_bombsites(dm: DataManager, nodes: dict):
     return closest_distances_A, closest_distances_B
 
 
-def _distance_internal(map_name, area_a, area_b):
+def _distance_internal(map_name, area_a, area_b, logger=None):
     # Use Area Distance Matrix if available, since it is faster
     # distance matrix uses strings as key
     area_a_str = str(area_a)
@@ -333,9 +317,7 @@ def _distance_internal(map_name, area_a, area_b):
         ]
     # Else: calculate distance from pairwise iteration over all areas in map
     else:
-        if (
-            LOGGING_LEVEL == "DEBUG" and len(AREA_DIST_MATRIX) > 0
-        ):  # this happened once, not sure if debug overhead is needed
+        if logger and logger.isEnabledFor(logging.DEBUG) and len(AREA_DIST_MATRIX) > 0:
             logger.debug("Area matrix exists but does not contain areaid: %d" % area_a)
         geodesic_path = area_distance(
             map_name=map_name, area_a=area_a, area_b=area_b, dist_type="geodesic"
@@ -344,10 +326,17 @@ def _distance_internal(map_name, area_a, area_b):
     return current_bombsite_dist
 
 
-async def main():
-    dm = DataManager(stats.EXAMPLE_DEMO_PATH, do_validate=False)
+async def process_single_demo(demo_path, queue=None, key=None):
+    # logger
+    uuid = Path(demo_path).stem
+    timestamp = time.strftime("%Y-%m-%d_%H-%M-%S")
+    log_path = Path("research_project/graphs") / uuid / "logs" / f"{timestamp}.log"
+    logger = get_logger(
+        log_path, name=f"create_graphs_logger_{uuid}", level=logging.DEBUG
+    )
 
-    output_folder = Path(__file__).parent / "../graphs/" / stats.EXAMPLE_DEMO_PATH.stem
+    dm = DataManager(Path(demo_path), do_validate=False, logger=logger)
+    output_folder = Path(__file__).parent / "../graphs/" / Path(demo_path).stem
     output_filename_template = str(output_folder / "graph-rounds-%d.pkl")
     output_folder.mkdir(parents=True, exist_ok=True)
 
@@ -377,25 +366,27 @@ async def main():
             strategy_labels = json.load(f)
 
     start_time = time.time()
+    total_frames = len(dm.get_all_frames())
+    processed_frames = 0
     graphs_total = 0
     for round_idx in range(dm.get_round_count()):
         output_filename = output_filename_template % round_idx
         logger.info("Converting round %d to file %s." % (round_idx, output_filename))
 
-        # send progress embed
+        progress = round((processed_frames / total_frames) * 100, 2)
+        eta = dm.get_estimated_finish(
+            start_time=start_time, processed_frames=processed_frames
+        )
         await send_progress_embed(
-            progress=round((round_idx) / dm.get_round_count() * 100, 2),
+            progress=progress,
             roundsTotal=dm.get_round_count(),
             currentRound=round_idx,
-            eta=calculate_eta(
-                start_time=start_time,
-                current_round=round_idx,
-                rounds_framecount=dm.get_rounds_frame_count(),
-            ),
+            eta=eta,
             id=dm.get_match_id(),
             sendSilent=(
                 round_idx not in [0, dm.get_round_count() - 1]
             ),  # Send silent for first and last round
+            logger=logger,
         )
 
         # we need to swap mappings, because player sides switch here.
@@ -405,13 +396,82 @@ async def main():
 
         # process round
         round_label = strategy_labels.get(str(round_idx + 1), "unknown")
-        graphs = process_round(dm, round_idx, strategy_used=round_label)
+        graphs = process_round(
+            dm,
+            round_idx,
+            strategy_used=round_label,
+            queue=queue,
+            key=key,
+            logger=logger,
+        )
         with open(output_filename, "wb") as f:
             pickle.dump(graphs, f)
 
         logger.info("%d graphs written to file." % len(graphs))
         graphs_total += len(graphs)
+        processed_frames += len(graphs)
+
     logger.info("✅ SUCCESSFULLY COMPLETED: %d graphs written in total." % graphs_total)
+
+
+def process_single_demo_sync(demo_path, queue, key):
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    loop.run_until_complete(process_single_demo(demo_path, queue=queue, key=key))
+
+
+def progress_monitor(queue, total_map):
+    pbars = {
+        k: tqdm(total=v, desc=k, position=i, leave=True)
+        for i, (k, v) in enumerate(total_map.items())
+    }
+    finished = set()
+    while len(finished) < len(pbars):
+        task = queue.get()
+        if task is None:
+            break
+        key, n = task
+        if key in pbars:
+            pbars[key].update(n)
+            if pbars[key].n >= pbars[key].total:
+                finished.add(key)
+    for pbar in pbars.values():
+        pbar.close()
+
+
+async def main():
+    demo_filenames = get_demo_files_from_list("file_paths.json", compressed=False)
+
+    demo_pathnames = [
+        "research_project/demos/dust2/" + demo_filename
+        for demo_filename in demo_filenames
+    ]
+
+    batch_size = 10
+
+    # Calculate total frames per demo for progress bars
+    total_map = {
+        demo: len(DataManager(Path(demo), do_validate=False).get_all_frames())
+        for demo in demo_pathnames[:batch_size]
+    }
+    manager = Manager()
+    queue = manager.Queue()
+    monitor = Process(target=progress_monitor, args=(queue, total_map))
+    monitor.start()
+
+    loop = asyncio.get_event_loop()
+    with ProcessPoolExecutor(max_workers=batch_size) as executor:
+        tasks = [
+            loop.run_in_executor(
+                executor,
+                functools.partial(process_single_demo_sync, demo, queue, demo),
+            )
+            for demo in demo_pathnames[:batch_size]
+        ]
+        await asyncio.gather(*tasks)
+
+    queue.put(None)
+    monitor.join()
 
 
 if __name__ == "__main__":
