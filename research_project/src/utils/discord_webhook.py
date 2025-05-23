@@ -1,13 +1,23 @@
+import asyncio
 import os
 
 import aiohttp
 import discord
+from dotenv import load_dotenv
+
+load_dotenv()
+
 
 WEBHOOK_URL = (
     os.environ.get("TESTING_WEBHOOK_URL")
     if os.environ.get("ENVIRONMENT") == "local"
     else os.environ.get("LIVE_WEBHOOK_URL")
 )
+
+if not WEBHOOK_URL:
+    raise ValueError(
+        "❌ WEBHOOK_URL is not set. Please check your .env file and environment variables."
+    )
 
 
 async def send_progress_embed(
@@ -50,7 +60,11 @@ async def send_progress_embed(
             username="Graph Updates",
             avatar_url="https://as2.ftcdn.net/jpg/05/56/17/61/1000_F_556176185_wmiwJtRkwDEs73iWgGuY0vugaZtV0AzD.jpg",
         )
+
+    if logger:
         logger.info(f"✅ Discord Webhook Sent Successfully {id} {progress}%")
+    else:
+        print(f"✅ Discord Webhook Sent Successfully {id} {progress}%")
 
 
 # Example: send 0-100 progress
@@ -72,7 +86,10 @@ async def send_error_embed(error_message: str, id: str, sendSilent=False, logger
         webhook = discord.Webhook.from_url(WEBHOOK_URL, session=session)
         await webhook.send(embed=embed, silent=sendSilent, username="Graph Updates")
 
-    logger.error(f"❌ Error embed sent: {error_message}")
+    if logger:
+        logger.error(f"❌ Error embed sent: {error_message}")
+    else:
+        print(f"❌ Error embed sent: {error_message}")
 
 
 # Send a warning embed to Discord
@@ -90,4 +107,23 @@ async def send_warning_embed(
     async with aiohttp.ClientSession() as session:
         webhook = discord.Webhook.from_url(WEBHOOK_URL, session=session)
         await webhook.send(embed=embed, silent=sendSilent, username="Graph Updates")
-    logger.warning(f"⚠️ Warning embed sent: {warning_message}")
+    if logger:
+        logger.warning(f"⚠️ Warning embed sent: {warning_message}")
+    else:
+        print(f"⚠️ Warning embed sent: {warning_message}")
+
+
+if __name__ == "__main__":
+
+    # Example usage
+    loop = asyncio.get_event_loop()
+    loop.run_until_complete(
+        send_progress_embed(
+            progress=50,
+            roundsTotal=100,
+            currentRound=50,
+            eta="10 minutes",
+            id="12345",
+            sendSilent=False,
+        )
+    )

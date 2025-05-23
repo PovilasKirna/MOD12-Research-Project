@@ -1,12 +1,14 @@
-# This file contains utility functions for downloading demo files from a repository and extracting them to a specified directory.
-
 import json
 import os
 from typing import List
 
 import requests
 from tqdm import tqdm
-from utils.extract_demos import extract_single_xz_json_file
+
+if __name__ == "__main__":
+    from extract_demos import extract_single_xz_json_file
+else:
+    from utils.extract_demos import extract_single_xz_json_file
 
 
 def download_file(url: str, output_path: str) -> None:
@@ -44,9 +46,9 @@ def get_demo_files_from_list(demo_files_list_path: str, compressed: bool) -> Lis
     names = []
     for demo_file in demo_files_list:
         if compressed:
-            names.append(demo_file["filename"] + ".xz")
+            names.append(demo_file + ".xz")
         else:
-            names.append(demo_file["filename"])
+            names.append(demo_file)
 
     return names
 
