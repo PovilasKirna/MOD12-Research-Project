@@ -1116,15 +1116,22 @@ class TimelineBar(ttk.Frame):
             self._add_event_markers(round_index)
             self.load_timeline_tactics(round_index)
 
-    def _draw_progress_bar_fill_rectangle(self, x: int):
+    def _draw_progress_bar_fill_rectangle(self, x: int, y: int):
         """Draws a rectangle in the progress bar starting from the left and ending at the x-coordinate specified by `x`."""
         self._timeline_canvas.delete("progress")
+        self._timeline_canvas.delete("progress_current_frame")
         self._timeline_canvas.create_rectangle(
-            0, 0, x, self._timeline_canvas.winfo_height(), fill="lightgray", tags="progress"
+            0, 0, x, self._timeline_canvas.winfo_height(), fill="lightgray", outline="", tags="progress"
         )
         self._timeline_canvas.tag_lower(
             "progress"
         )  # Lower the progress bar along the z-axis so that it doesn't cover the event markers
+        self._timeline_canvas.create_rectangle(
+            x, 0, y, self._timeline_canvas.winfo_height(), fill="silver", outline="", tags="progress_current_frame"
+        )
+        self._timeline_canvas.tag_lower(
+            "progress_current_frame"
+        )
         self._timeline_canvas.update()
 
     def set_timeline_bar_progress(self, round_index: int, current_frame_index: int = 0):
@@ -1145,7 +1152,10 @@ class TimelineBar(ttk.Frame):
         progress_bar_fill_length = int(
             current_frame_index * self._get_pixels_per_frame(round_index)
         )
-        self._draw_progress_bar_fill_rectangle(progress_bar_fill_length)
+        previewed_frame_end = int(
+            (current_frame_index + 1) * self._get_pixels_per_frame(round_index)
+        )
+        self._draw_progress_bar_fill_rectangle(progress_bar_fill_length, previewed_frame_end)
 
     def load_timeline_tactics(self, round_index: int):
         if self.parent.dm is None:
