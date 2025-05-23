@@ -49,9 +49,9 @@ def get_demo_files_from_list(demo_files_list_path: str, compressed: bool) -> Lis
     names = []
     for demo_file in demo_files_list:
         if compressed:
-            names.append(demo_file + ".xz")
+            names.append(demo_file["filename"] + ".xz")
         else:
-            names.append(demo_file)
+            names.append(demo_file["filename"])
 
     return names
 
