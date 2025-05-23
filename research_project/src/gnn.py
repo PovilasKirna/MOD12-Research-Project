@@ -3,6 +3,8 @@ import os
 import pickle
 from collections import Counter
 
+import pandas as pd
+import plotly.express as px
 import torch
 import torch.nn.functional as F
 from torch.nn import Linear
@@ -148,20 +150,41 @@ def train():
         print(f"Epoch {epoch}, Loss: {total_loss:.4f}, Accuracy: {accuracy:.2%}")
 
         model.eval()
-        correct = 0
-        total = 0
+        predictions = []
+
         with torch.no_grad():
-            for batch in test_loader:
-                batch = batch.to(device)
-                out = model(batch.x, batch.edge_index, batch.batch)
+            for i, data in enumerate(test_loader):
+                data = data.to(device)
+                out = model(data.x, data.edge_index, data.batch)
                 pred = out.argmax(dim=1)
-                correct += (pred == batch.y).sum().item()
-                total += batch.y.size(0)
 
-        test_acc = correct / total if total > 0 else 0
+                for j in range(data.num_graphs):
+                    predictions.append(
+                        {
+                            "index": i * test_loader.batch_size + j,
+                            "true": data.y[j].item(),
+                            "pred": pred[j].item(),
+                            "x": data.x[data.batch == j].cpu().numpy(),  # node features
+                            "edge_index": data.edge_index[:, data.batch == j]
+                            .cpu()
+                            .numpy(),
+                        }
+                    )
+        return predictions
 
-        print(f" → Test Accuracy: {test_acc:.2%}")
+
+def interactive_round(pred_data):
+    x = pred_data["x"]
+    true = pred_data["true"]
+    pred = pred_data["pred"]
+    df = pd.DataFrame(x, columns=["x", "y", "z", ...])  # trim to 2D if needed
+
+    fig = px.scatter(
+        df, x="x", y="y", color_discrete_sequence=["green" if pred == true else "red"]
+    )
+    fig.update_layout(title=f"Pred: {pred} | True: {true}", width=600, height=500)
+    fig.show()
 
 
 if __name__ == "__main__":
-    train()
+    interactive_round(train())  # Example to visualize the first prediction
