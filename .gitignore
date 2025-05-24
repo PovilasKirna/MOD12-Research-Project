@@ -9,6 +9,5 @@ poetry.lock
 .DS_Store
 logs/
 research_project/demos/
-research_project/graphs/
 .env.local
 .env
