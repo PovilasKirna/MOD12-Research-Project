@@ -62,7 +62,11 @@ for file in demo_dir.glob("*.json"):
 
     for round in demo.get("gameRounds", []):
         for frame in round.get("frames", []):
-            for player in frame.get("t", {}).get("players", []):
+            t_team = frame.get("t")
+            players = t_team.get("players") if isinstance(t_team, dict) else None
+            if not isinstance(players, list):
+                continue
+            for player in players:
                 weapon = player.get("activeWeapon", "")
                 if weapon not in known_weapons:
                     unknown_weapons.setdefault(file.name, set()).add(weapon)
