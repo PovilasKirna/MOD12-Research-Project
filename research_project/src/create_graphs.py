@@ -109,6 +109,29 @@ WEAPON_ID_MAPPING = {  # TODO: add missing weapons
     "SG 553": 19,
     "Desert Eagle": 20,
     "Zeus x27": 21,
+    "CZ75 Auto": 22,
+    "M4A4": 23,
+    "Five-SeveN": 24,
+    "AUG": 25,
+    "FAMAS": 26,
+    "MP9": 27,
+    "G3SG1": 28,
+    "UMP-45": 29,
+    "MP5-SD": 30,
+    "Dual Berettas": 31,
+    "P2000": 32,
+    "MP7": 33,
+    "Nova": 34,
+    "XM1014": 35,
+    "MAG-7": 36,
+    "Sawed-Off": 37,
+    "SCAR-20": 38,
+    "PP-Bizon": 39,
+    "M249": 40,
+    "Negev": 41,
+    "Taser": 42,
+    "R8 Revolver": 43,
+    "M4A1-S": 44,
 }
 
 
@@ -185,7 +208,9 @@ def process_round(
                 map_name, point=[node_data[key] for key in ("x", "y", "z")], flat=False
             )["areaId"]
             node_data["nodeType"] = NODE_TYPE_PLAYER_INDEX
-            node_data["activeWeapon"] = map_weapon_to_id(node_data["activeWeapon"])
+            node_data["activeWeapon"] = map_weapon_to_id(
+                node_data["activeWeapon"], logger=logger
+            )
             nodes_data[player_idx] = node_data
 
         # add bomb node
@@ -256,7 +281,11 @@ def process_round(
     return graphs
 
 
-def map_weapon_to_id(weaponName: str):
+def map_weapon_to_id(weaponName: str, logger=None) -> int:
+    if weaponName not in WEAPON_ID_MAPPING:
+        # Optional: log unknown weapons for later inspection
+        logging.getLogger("weapon_mapping").warning(f"Unknown weapon: {weaponName}")
+        return -1  # or a reserved ID like -1
     return WEAPON_ID_MAPPING[weaponName]
 
 
