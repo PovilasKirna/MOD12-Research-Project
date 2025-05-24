@@ -1,3 +1,4 @@
+import argparse
 import asyncio
 import functools
 import json
@@ -363,7 +364,13 @@ def _distance_internal(map_name, area_a, area_b, logger=None):
     return current_bombsite_dist
 
 
-async def process_single_demo(demo_path, queue=None, key=None):
+async def process_single_demo(
+    demo_path,
+    queue=None,
+    key=None,
+    send_dc_webhooks=False,
+    rewrite_graphed_rounds=False,
+):
     # logger
     uuid = Path(demo_path).stem
     timestamp = time.strftime("%Y-%m-%d_%H-%M-%S")
@@ -403,17 +410,18 @@ async def process_single_demo(demo_path, queue=None, key=None):
         eta = dm.get_estimated_finish(
             start_time=start_time, processed_frames=processed_frames
         )
-        await send_progress_embed(
-            progress=progress,
-            roundsTotal=dm.get_round_count(),
-            currentRound=round_idx,
-            eta=eta,
-            id=dm.get_match_id(),
-            sendSilent=(
-                round_idx not in [0, dm.get_round_count() - 1]
-            ),  # Send silent for first and last round
-            logger=logger,
-        )
+        if send_dc_webhooks:
+            await send_progress_embed(
+                progress=progress,
+                roundsTotal=dm.get_round_count(),
+                currentRound=round_idx,
+                eta=eta,
+                id=dm.get_match_id(),
+                sendSilent=(
+                    round_idx not in [0, dm.get_round_count() - 1]
+                ),  # Send silent for first and last round
+                logger=logger,
+            )
 
         # we need to swap mappings, because player sides switch here.
         # WARNING: This only works if teams player in MR15 setting.
@@ -430,6 +438,17 @@ async def process_single_demo(demo_path, queue=None, key=None):
                 f"No tactic labels found for round {round_idx + 1}. Defaulting to 'unknown'."
             )
             frame_tactic_map = {}
+
+        # Skip if not rewriting and file exists
+        if not rewrite_graphed_rounds and Path(output_filename).exists():
+            logger.info(f"Skipping round {round_idx}: graph file already exists.")
+            if queue and key:
+                estimated_frames = len(dm._get_frames(round_idx))
+                queue.put((key, estimated_frames))
+
+            graphs_total += estimated_frames
+            processed_frames += estimated_frames
+            continue
 
         graphs = process_round(
             dm,
@@ -449,10 +468,20 @@ async def process_single_demo(demo_path, queue=None, key=None):
     logger.info("✅ SUCCESSFULLY COMPLETED: %d graphs written in total." % graphs_total)
 
 
-def process_single_demo_sync(demo_path, queue, key):
+def process_single_demo_sync(
+    demo_path, queue, key, send_dc_webhooks=False, rewrite_graphed_rounds=False
+):
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
-    loop.run_until_complete(process_single_demo(demo_path, queue=queue, key=key))
+    loop.run_until_complete(
+        process_single_demo(
+            demo_path,
+            queue=queue,
+            key=key,
+            send_dc_webhooks=send_dc_webhooks,
+            rewrite_graphed_rounds=rewrite_graphed_rounds,
+        )
+    )
 
 
 def progress_monitor(queue, total_map):
@@ -515,7 +544,7 @@ def get_env_variables():
     )
 
 
-async def main():
+async def main(send_dc_webhooks=False, rewrite_graphed_rounds=False):
     batch_size, demo_filenames_path, create_graphs_filenames, create_graphs_demo_dir = (
         get_env_variables()
     )
@@ -556,7 +585,14 @@ async def main():
         tasks = [
             loop.run_in_executor(
                 executor,
-                functools.partial(process_single_demo_sync, demo, queue, demo),
+                functools.partial(
+                    process_single_demo_sync,
+                    demo,
+                    queue,
+                    demo,
+                    send_dc_webhooks=send_dc_webhooks,
+                    rewrite_graphed_rounds=rewrite_graphed_rounds,
+                ),
             )
             for demo in demo_pathnames
         ]
@@ -566,6 +602,24 @@ async def main():
     monitor.join()
 
 
+parser = argparse.ArgumentParser(description="Process CS:GO demo graphs.")
+parser.add_argument(
+    "-no-dc-webhooks",
+    action="store_true",
+    help="Disable Discord webhook progress updates",
+)
+parser.add_argument(
+    "-rewrite-graphed-rounds",
+    action="store_true",
+    help="Rewrite rounds even if graph files already exist",
+)
+args = parser.parse_args()
+
 if __name__ == "__main__":
     loop = asyncio.get_event_loop()
-    loop.run_until_complete(main())
+    loop.run_until_complete(
+        main(
+            send_dc_webhooks=not args.no_dc_webhooks,
+            rewrite_graphed_rounds=args.rewrite_graphed_rounds,
+        )
+    )
