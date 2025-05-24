@@ -467,6 +467,17 @@ async def process_single_demo(
 
     logger.info("✅ SUCCESSFULLY COMPLETED: %d graphs written in total." % graphs_total)
 
+    if send_dc_webhooks:
+        await send_progress_embed(
+            progress=100,
+            roundsTotal=dm.get_round_count(),
+            currentRound=dm.get_round_count() - 1,
+            eta=0,
+            id=dm.get_match_id(),
+            sendSilent=False,
+            logger=logger,
+        )
+
 
 def process_single_demo_sync(
     demo_path, queue, key, send_dc_webhooks=False, rewrite_graphed_rounds=False
