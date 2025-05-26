@@ -1,7 +1,9 @@
+import argparse
 import asyncio
 import functools
 import json
 import logging
+import os
 import pickle
 import time
 from concurrent.futures import ProcessPoolExecutor
@@ -108,13 +110,36 @@ WEAPON_ID_MAPPING = {  # TODO: add missing weapons
     "SG 553": 19,
     "Desert Eagle": 20,
     "Zeus x27": 21,
+    "CZ75 Auto": 22,
+    "M4A4": 23,
+    "Five-SeveN": 24,
+    "AUG": 25,
+    "FAMAS": 26,
+    "MP9": 27,
+    "G3SG1": 28,
+    "UMP-45": 29,
+    "MP5-SD": 30,
+    "Dual Berettas": 31,
+    "P2000": 32,
+    "MP7": 33,
+    "Nova": 34,
+    "XM1014": 35,
+    "MAG-7": 36,
+    "Sawed-Off": 37,
+    "SCAR-20": 38,
+    "PP-Bizon": 39,
+    "M249": 40,
+    "Negev": 41,
+    "Taser": 42,
+    "R8 Revolver": 43,
+    "M4A1-S": 44,
 }
 
 
 def process_round(
     dm: DataManager,
     round_idx: int,
-    strategy_used: str = "unknown",
+    frame_tactic_map: dict[str, str] = None,
     queue=None,
     key=None,
     logger=None,
@@ -124,7 +149,6 @@ def process_round(
 
     # all variables on the round level --> graph data
     round_data = {key: round[key] for key in KEYS_ROUND_LEVEL}
-    round_data["strategy_used"] = strategy_used
 
     frames = dm._get_frames(round_idx)
 
@@ -147,8 +171,16 @@ def process_round(
                 queue.put((key, 1))
             continue
 
+        # tactic label for this frame
+        tactic = (
+            frame_tactic_map.get(str(frame_idx), "unknown")
+            if frame_tactic_map
+            else "unknown"
+        )
+
         # all variables on the frame level are added to the graph level data.
         graph_data = {key: frame[key] for key in KEYS_FRAME_LEVEL} | round_data
+        graph_data["strategy_used"] = tactic
 
         # include estimated seconds from bomb data for each frame
         if (
@@ -177,7 +209,9 @@ def process_round(
                 map_name, point=[node_data[key] for key in ("x", "y", "z")], flat=False
             )["areaId"]
             node_data["nodeType"] = NODE_TYPE_PLAYER_INDEX
-            node_data["activeWeapon"] = map_weapon_to_id(node_data["activeWeapon"])
+            node_data["activeWeapon"] = map_weapon_to_id(
+                node_data["activeWeapon"], logger=logger
+            )
             nodes_data[player_idx] = node_data
 
         # add bomb node
@@ -248,7 +282,11 @@ def process_round(
     return graphs
 
 
-def map_weapon_to_id(weaponName: str):
+def map_weapon_to_id(weaponName: str, logger=None) -> int:
+    if weaponName not in WEAPON_ID_MAPPING:
+        # Optional: log unknown weapons for later inspection
+        logging.getLogger("weapon_mapping").warning(f"Unknown weapon: {weaponName}")
+        return -1  # or a reserved ID like -1
     return WEAPON_ID_MAPPING[weaponName]
 
 
@@ -326,7 +364,13 @@ def _distance_internal(map_name, area_a, area_b, logger=None):
     return current_bombsite_dist
 
 
-async def process_single_demo(demo_path, queue=None, key=None):
+async def process_single_demo(
+    demo_path,
+    queue=None,
+    key=None,
+    send_dc_webhooks=False,
+    rewrite_graphed_rounds=False,
+):
     # logger
     uuid = Path(demo_path).stem
     timestamp = time.strftime("%Y-%m-%d_%H-%M-%S")
@@ -345,25 +389,14 @@ async def process_single_demo(demo_path, queue=None, key=None):
         % (dm.get_match_id(), dm.get_round_count())
     )
 
-    # load the labels for the match
-    strategy_labels = {}
-    tactic_path = (
+    # tactic label directory for per-frame labeling
+    tactic_dir = (
         Path.cwd()
         / "research_project"
         / "tactic_labels"
         / dm.get_map_name()
-        / f"{dm.get_match_id()}.json"
+        / dm.get_match_id()
     )
-    if not tactic_path.exists():
-        logger.warning(
-            "No tactic labels found for match %s. Using default label 'unknown'."
-            % dm.get_match_id()
-        )
-    else:
-        logger.info("Loading tactic labels from %s." % tactic_path)
-        # load the labels for the match
-        with open(tactic_path, "r") as f:
-            strategy_labels = json.load(f)
 
     start_time = time.time()
     total_frames = len(dm.get_all_frames())
@@ -377,29 +410,50 @@ async def process_single_demo(demo_path, queue=None, key=None):
         eta = dm.get_estimated_finish(
             start_time=start_time, processed_frames=processed_frames
         )
-        await send_progress_embed(
-            progress=progress,
-            roundsTotal=dm.get_round_count(),
-            currentRound=round_idx,
-            eta=eta,
-            id=dm.get_match_id(),
-            sendSilent=(
-                round_idx not in [0, dm.get_round_count() - 1]
-            ),  # Send silent for first and last round
-            logger=logger,
-        )
+        if send_dc_webhooks:
+            await send_progress_embed(
+                progress=progress,
+                roundsTotal=dm.get_round_count(),
+                currentRound=round_idx,
+                eta=eta,
+                id=dm.get_match_id(),
+                sendSilent=(
+                    round_idx not in [0, dm.get_round_count() - 1]
+                ),  # Send silent for first and last round
+                logger=logger,
+            )
 
         # we need to swap mappings, because player sides switch here.
         # WARNING: This only works if teams player in MR15 setting.
         if round_idx == 15:
             dm.swap_player_mapping()
 
-        # process round
-        round_label = strategy_labels.get(str(round_idx + 1), "unknown")
+        # Load per-frame tactic labels for this round
+        round_label_path = tactic_dir / f"{dm.get_match_id()}_{round_idx + 1}.json"
+        if round_label_path.exists():
+            with open(round_label_path, "r") as f:
+                frame_tactic_map = json.load(f)
+        else:
+            logger.warning(
+                f"No tactic labels found for round {round_idx + 1}. Defaulting to 'unknown'."
+            )
+            frame_tactic_map = {}
+
+        # Skip if not rewriting and file exists
+        if not rewrite_graphed_rounds and Path(output_filename).exists():
+            logger.info(f"Skipping round {round_idx}: graph file already exists.")
+            if queue and key:
+                estimated_frames = len(dm._get_frames(round_idx))
+                queue.put((key, estimated_frames))
+
+            graphs_total += estimated_frames
+            processed_frames += estimated_frames
+            continue
+
         graphs = process_round(
             dm,
             round_idx,
-            strategy_used=round_label,
+            frame_tactic_map=frame_tactic_map,
             queue=queue,
             key=key,
             logger=logger,
@@ -413,11 +467,32 @@ async def process_single_demo(demo_path, queue=None, key=None):
 
     logger.info("✅ SUCCESSFULLY COMPLETED: %d graphs written in total." % graphs_total)
 
+    if send_dc_webhooks:
+        await send_progress_embed(
+            progress=100,
+            roundsTotal=dm.get_round_count(),
+            currentRound=dm.get_round_count() - 1,
+            eta=0,
+            id=dm.get_match_id(),
+            sendSilent=False,
+            logger=logger,
+        )
 
-def process_single_demo_sync(demo_path, queue, key):
+
+def process_single_demo_sync(
+    demo_path, queue, key, send_dc_webhooks=False, rewrite_graphed_rounds=False
+):
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
-    loop.run_until_complete(process_single_demo(demo_path, queue=queue, key=key))
+    loop.run_until_complete(
+        process_single_demo(
+            demo_path,
+            queue=queue,
+            key=key,
+            send_dc_webhooks=send_dc_webhooks,
+            rewrite_graphed_rounds=rewrite_graphed_rounds,
+        )
+    )
 
 
 def progress_monitor(queue, total_map):
@@ -439,20 +514,77 @@ def progress_monitor(queue, total_map):
         pbar.close()
 
 
-async def main():
-    demo_filenames = get_demo_files_from_list("file_paths.json", compressed=False)
+def get_env_variables():
+    batch_size = int(os.environ.get("CREATE_GRAPHS_PROCESSES_COUNT", 10))
+    demo_filenames_path = os.environ.get("DUST2_DEMOS_FILENAMES_PATH")
+    create_graphs_filenames = os.environ.get("CREATE_GRAPHS_FILENAMES_PATH")
+    create_graphs_demo_dir = os.environ.get("CREATE_GRAPHS_DEMO_DIR")
+
+    if not create_graphs_demo_dir:
+        raise ValueError("Environment variable CREATE_GRAPHS_DEMO_DIR is not set.")
+    if not os.path.exists(create_graphs_demo_dir):
+        raise ValueError(
+            f"Demo directory {create_graphs_demo_dir} does not exist. Please check the path."
+        )
+    if not demo_filenames_path:
+        raise ValueError("Environment variable DUST2_DEMOS_FILENAMES_PATH is not set.")
+    if not os.path.exists(demo_filenames_path):
+        raise ValueError(
+            f"File list path {demo_filenames_path} does not exist. Please check the path."
+        )
+    if not create_graphs_filenames:
+        raise ValueError(
+            "Environment variable CREATE_GRAPHS_FILENAMES_PATH is not set."
+        )
+    if not os.path.exists(create_graphs_filenames):
+        raise ValueError(
+            f"File list path {create_graphs_filenames} does not exist. Please check the path."
+        )
+    if batch_size:
+        print(f"Using {batch_size} processes for graph creation.")
+    else:
+        print(
+            "Environment variable CREATE_GRAPHS_PROCESSES_COUNT is not set. Using default of 1 process."
+        )
+        batch_size = 1
+    return (
+        batch_size,
+        demo_filenames_path,
+        create_graphs_filenames,
+        create_graphs_demo_dir,
+    )
+
+
+async def main(send_dc_webhooks=False, rewrite_graphed_rounds=False):
+    batch_size, demo_filenames_path, create_graphs_filenames, create_graphs_demo_dir = (
+        get_env_variables()
+    )
+
+    demo_filenames = get_demo_files_from_list(demo_filenames_path, compressed=False)
+
+    print(f"Found {len(demo_filenames)} demo filenames in the demo filenames list.")
+
+    with open(create_graphs_filenames, "r") as f:
+        filtered_demos = json.load(f)
+    print(
+        f"Found {len(filtered_demos)} demo filenames in the scheduled process file list."
+    )
 
     demo_pathnames = [
-        "research_project/demos/dust2/" + demo_filename
-        for demo_filename in demo_filenames
+        create_graphs_demo_dir + demo_filename
+        for demo_filename in filtered_demos
+        if os.path.exists(create_graphs_demo_dir + demo_filename)
     ]
 
-    batch_size = 10
+    print(
+        f"Found {len(demo_pathnames)} demo files in '{create_graphs_demo_dir}' directory."
+    )
+    print(f"Processing {len(demo_pathnames)}/{len(filtered_demos)} demo files...")
 
     # Calculate total frames per demo for progress bars
     total_map = {
         demo: len(DataManager(Path(demo), do_validate=False).get_all_frames())
-        for demo in demo_pathnames[:batch_size]
+        for demo in demo_pathnames
     }
     manager = Manager()
     queue = manager.Queue()
@@ -464,9 +596,16 @@ async def main():
         tasks = [
             loop.run_in_executor(
                 executor,
-                functools.partial(process_single_demo_sync, demo, queue, demo),
+                functools.partial(
+                    process_single_demo_sync,
+                    demo,
+                    queue,
+                    demo,
+                    send_dc_webhooks=send_dc_webhooks,
+                    rewrite_graphed_rounds=rewrite_graphed_rounds,
+                ),
             )
-            for demo in demo_pathnames[:batch_size]
+            for demo in demo_pathnames
         ]
         await asyncio.gather(*tasks)
 
@@ -474,6 +613,24 @@ async def main():
     monitor.join()
 
 
+parser = argparse.ArgumentParser(description="Process CS:GO demo graphs.")
+parser.add_argument(
+    "-no-dc-webhooks",
+    action="store_true",
+    help="Disable Discord webhook progress updates",
+)
+parser.add_argument(
+    "-rewrite-graphed-rounds",
+    action="store_true",
+    help="Rewrite rounds even if graph files already exist",
+)
+args = parser.parse_args()
+
 if __name__ == "__main__":
     loop = asyncio.get_event_loop()
-    loop.run_until_complete(main())
+    loop.run_until_complete(
+        main(
+            send_dc_webhooks=not args.no_dc_webhooks,
+            rewrite_graphed_rounds=args.rewrite_graphed_rounds,
+        )
+    )
