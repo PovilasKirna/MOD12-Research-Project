@@ -798,10 +798,11 @@ class TimelineBar(ttk.Frame):
         self.parent = parent
 
         # Initialize empty selection
-        self.selection_active = False # Stub implementation for later
+        self.selection_active = False
         self.selection_start_frame = None
         self.selection_end_frame = None
         self.selection_marker = None
+        self.selection_drag_side = None
 
         # Create GUI here
 
@@ -888,7 +889,6 @@ class TimelineBar(ttk.Frame):
                 )
             )
         )
-        '''
         timeline_canvas.bind(
             "<MouseWheel>",
             lambda e: self._jump_to_frame(
@@ -900,7 +900,10 @@ class TimelineBar(ttk.Frame):
                 )
             )
         )
-        '''
+        timeline_canvas.bind(
+            "<ButtonRelease-3>",
+            self.selection_button_release
+        )
         self.visualized_round_index = round_index
 
         if round_index is not None:
@@ -950,9 +953,9 @@ class TimelineBar(ttk.Frame):
         self.parent.vm.revisualize()
         # Reload visualization widgets
         self.parent.reload_visualization_widgets()
-
+    
     def _select_frame(self, event: tk.Event):
-        """Sets the current frame of the visualization to the frame that corresponds to the point clicked on in the timeline bar. Doesn't do anything if no demo is loaded."""
+        """Selects a portion of frames on the timeline bar and sets the current frame in the visualization."""
         if self.parent.dm is None:
             return
         if self.parent.vm is None:
@@ -966,9 +969,23 @@ class TimelineBar(ttk.Frame):
 
         frame_index = int(event.x / self._get_pixels_per_frame(self.visualized_round_index))
 
-        if self.selection_start_frame is None:
+        if not self.selection_active:
+            # Initial selection start
             self.selection_start_frame = frame_index
-        self.selection_end_frame = frame_index
+            self.selection_end_frame = frame_index
+            self.selection_active = True
+            self.selection_drag_side = None
+        else:
+            # If already active, decide which side to update
+            if self.selection_drag_side is None:
+                dist_to_start = abs(frame_index - self.selection_start_frame)
+                dist_to_end = abs(frame_index - self.selection_end_frame)
+                self.selection_drag_side = "start" if dist_to_start < dist_to_end else "end"
+
+            if self.selection_drag_side == "start":
+                self.selection_start_frame = frame_index
+            else:
+                self.selection_end_frame = frame_index
 
         start = min(self.selection_start_frame, self.selection_end_frame)
         end = max(self.selection_start_frame, self.selection_end_frame) + 1
@@ -996,12 +1013,16 @@ class TimelineBar(ttk.Frame):
         # Reload visualization widgets
         self.parent.reload_visualization_widgets()
 
+    def selection_button_release(self, event: tk.Event):
+        self.selection_drag_side = None
+
     def _deselect_frames(self, event: tk.Event = None):
         if self.selection_marker:
             self._timeline_canvas.delete(self.selection_marker)
         self.selection_active = False
         self.selection_start_frame = None
         self.selection_end_frame = None
+        self.selection_drag_side = None
         
     def _add_event_markers(self, round_index: int):
         """Adds markers to the timeline bar for each event that happened during the round specified by `round_index`."""
@@ -1337,11 +1358,15 @@ class TacticsSidebar(ttk.Frame):
             raise ValueError("DataManager not initialized.")
         if self.parent.vm is None:
             raise ValueError("VisualizationManager not initialized.")
+        
+        for widget in self.winfo_children():
+            widget.destroy()
 
         input_path = Path.cwd() / "research_project" / "tactic_labels" / f"{self.parent.dm.get_map_name()}_tactics.json"
 
         if not input_path.exists():
-            raise FileNotFoundError(f"Tactic labels file not found at: {input_path}")
+            print(f"Tactic labels file not found at: {input_path}")
+            return
 
         with open(input_path, "r") as f:
             self.tactic_labels = json.load(f)
@@ -1351,20 +1376,19 @@ class TacticsSidebar(ttk.Frame):
                 self,
                 text=tactic["name"],
                 width = 24,
-                height = 2,
                 command=lambda tactic_id=tactic["id"]: self.save_frame_tactic(
                     tactic_id
                 ),
-            ).pack(pady=2)
+            ).pack(side="top", fill="y", expand=True)
         tk.Button(
             self,
             text="DELETE TACTIC",
             width = 24,
-            height = 2,
+            height = 5,
             command=lambda tactic_id=None: self.save_frame_tactic(
                 tactic_id
             ),
-        ).pack(pady=2)
+        ).pack(pady=0)
 
     def save_frame_tactic(self, tactic_id = None):
         selection_start = self.parent.timeline_bar.selection_start_frame
