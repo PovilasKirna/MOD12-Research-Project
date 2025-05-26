@@ -945,7 +945,7 @@ class RoundSelectBar(ttk.Frame):
         self.parent.canvas.draw_round(round_index)
         self.parent.reload_visualization_widgets()
 
-    def disable_current_round_button(self, round_index: int):
+    def disable_round_button(self, round_index: int):
         """"""
         if 0 <= round_index < len(self.round_buttons):
             self.round_buttons[round_index].configure(state="disabled")
@@ -1268,10 +1268,10 @@ class TimelineBar(ttk.Frame):
             self.reset_timeline_bar(round_index)
             self._add_event_markers(round_index)
             self.load_timeline_tactics(round_index)
-            
+
             # Refresh round select bar as well
             self.parent.round_select_bar.update_round_list()
-            self.parent.round_select_bar.disable_current_round_button(round_index)
+            self.parent.round_select_bar.disable_round_button(round_index)
 
         # Paint the canvas up to current_frame_index * pixels_per_tick in gray to indicate progress
         progress_bar_fill_length = int(
