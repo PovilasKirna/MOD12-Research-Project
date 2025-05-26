@@ -2,6 +2,7 @@ import os
 import pickle
 from collections import Counter
 
+import joblib
 import numpy as np
 import torch
 import torch.nn.functional as F
@@ -16,7 +17,7 @@ from torch_geometric.utils import add_self_loops
 
 
 class GraphDataset(Dataset):
-    def __init__(self, graph_root_dir):
+    def __init__(self, graph_root_dir, area_encoder=None, label_to_id=None):
         super().__init__()
         self.graph_root_dir = graph_root_dir
         self.all_graphs = []
@@ -40,9 +41,13 @@ class GraphDataset(Dataset):
             for node_data in graph_data["nodes_data"].values():
                 self.area_ids.append([node_data.get("areaId", 0)])
 
-        self.area_encoder = OneHotEncoder(sparse_output=False, handle_unknown="ignore")
-
-        self.area_encoder.fit(self.area_ids)
+        if area_encoder is not None:
+            self.area_encoder = area_encoder
+        else:
+            self.area_encoder = OneHotEncoder(
+                sparse_output=False, handle_unknown="ignore"
+            )
+            self.area_encoder.fit(self.area_ids)
 
         # Normalize position values
         self.all_x = []
@@ -66,11 +71,16 @@ class GraphDataset(Dataset):
         )
 
         # Collect unique labels from all graphs
-        strategies = {
-            graph_data.get("graph_data", {}).get("strategy_used", "unknown")
-            for graph_data, _, _ in self.all_graphs
-        }
-        self.label_to_id = {label: idx for idx, label in enumerate(sorted(strategies))}
+        if label_to_id is not None:
+            self.label_to_id = label_to_id
+        else:
+            strategies = {
+                graph_data.get("graph_data", {}).get("strategy_used", "unknown")
+                for graph_data, _, _ in self.all_graphs
+            }
+            self.label_to_id = {
+                label: idx for idx, label in enumerate(sorted(strategies))
+            }
 
         # Convert each graph to a PyG Data object
         self.processed_graphs = [
@@ -243,7 +253,18 @@ def train():
         print(f" → Test Accuracy: {test_acc:.2%}")
 
     # Save model
-    # torch.save(model.state_dict(), "models/gnn_model1.pt")
+    os.makedirs("models", exist_ok=True)
+    joblib.dump(dataset.area_encoder, "research_project/models/area_encoder.pkl")
+    joblib.dump(dataset.label_to_id, "research_project/models/label_to_id.pkl")
+    torch.save(
+        {
+            "model_state_dict": model.state_dict(),
+            "optimizer_state_dict": optimizer.state_dict(),
+            "input_dim": input_dim,
+            "output_dim": output_dim,
+        },
+        "research_project\models/checkpoint1.pt",
+    )
 
     return model, dataset, class_weights
 
