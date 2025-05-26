@@ -38,6 +38,7 @@ class Predictor:
 
     def predict(self):
         predictions = []
+        preds = []
         print("Predicting...")
         with torch.no_grad():
             for i, batch in enumerate(self.loader):
@@ -46,13 +47,8 @@ class Predictor:
                 pred = out.argmax(dim=1)
                 pred_labels = [self.id_to_label[p.item()] for p in pred]
                 predictions.append(pred_labels)
-                print(predictions[i])
-        return predictions
 
-'''
-print("Starting prediction...")
-Predictor(
-    model_path="research_project\models\checkpoint1.pt",
-    dataset_path="research_project\graphs\9aa73173-d219-4c36-9e49-6924ca12e2ed",
-).predict()
-'''
+        for i in predictions:
+            preds.append(i[0])
+
+        return preds
