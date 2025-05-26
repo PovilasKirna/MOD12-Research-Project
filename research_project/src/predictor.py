@@ -31,7 +31,8 @@ class Predictor:
 
         optimizer = torch.optim.Adam(self.model.parameters(), lr=0.001)
         optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
-
+        
+        self.model.to(self.device)
         self.model.eval()
         print(f"Model loaded from {model_path}")
 
@@ -48,9 +49,10 @@ class Predictor:
                 print(predictions[i])
         return predictions
 
-
+'''
 print("Starting prediction...")
 Predictor(
     model_path="research_project\models\checkpoint1.pt",
     dataset_path="research_project\graphs\9aa73173-d219-4c36-9e49-6924ca12e2ed",
 ).predict()
+'''

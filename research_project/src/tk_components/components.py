@@ -5,6 +5,7 @@ import subprocess
 import sys
 import tkinter as tk
 import tkinter.ttk as ttk
+
 from pathlib import Path
 from tkinter import filedialog, messagebox, simpledialog
 
@@ -23,6 +24,7 @@ from tk_components.subcomponents import (
     PlayerInfoFrame,
     RoutineMenuButtonNames,
 )
+from predictor import Predictor
 
 # TODO: Re-create more Noesis functionality.
 # DONE 1. A bar on the bottom that has a list of round numbers. Selecting a round number shows the start of that round on the plot.
@@ -48,6 +50,7 @@ class MainApplication(ttk.Frame):
     round_select_bar: "RoundSelectBar"
     timeline_bar: "TimelineBar"
     tactics_sidebar: "TacticsSidebar"
+    prediction_label: "PredictionLabel"
 
     def __init__(self, root: tk.Tk, *args, **kwargs):
         ttk.Frame.__init__(self, root, *args, **kwargs)
@@ -77,6 +80,9 @@ class MainApplication(ttk.Frame):
         self.canvas = CanvasPanel(self)
         self.canvas.pack(side="top", fill="both", expand=True)
 
+        self.prediction_label = PredictionLabel(self)
+        self.prediction_label.pack(side="bottom", fill="x")
+
         self.pack(side="top", fill="both", expand=True)
 
     def load_file_and_reload(self, file_path: Path):
@@ -86,6 +92,7 @@ class MainApplication(ttk.Frame):
         self.canvas.draw_current_map()
         self.round_select_bar.update_round_list()
         self.tactics_sidebar.load_tactic_labels_list()
+        self.prediction_label.check_graphs()
 
         # Make sure there is a first round to draw before drawing it
         if self.dm.get_round_count() < 0:
@@ -1431,3 +1438,87 @@ class TacticsSidebar(ttk.Frame):
         self.parent.timeline_bar._deselect_frames()
         self.parent.timeline_bar.reset_timeline_bar(round_index)
         self.parent.timeline_bar.set_timeline_bar_progress(round_index, frame_index)
+
+class PredictionLabel(ttk.Frame):
+    """Displays predicted tactic information."""
+
+    parent: MainApplication
+    label: tk.Text
+    run_prediction_button: tk.Button
+
+    predictor: Predictor
+    predictor_output: list
+
+    def __init__(self, parent: MainApplication, *args, **kwargs):
+        ttk.Frame.__init__(self, parent, *args, **kwargs)
+        self.parent = parent
+        self.predictor = None
+        predictor_output = []
+
+        button_state = "disabled"
+
+        self.label = tk.Text(self, font=("Arial", 14), height=1, wrap="none")
+        self.run_prediction_button = tk.Button(
+            self,
+            text="Run Predictor",
+            command=lambda tactic_id=None: self.run_predictor(),
+            state=button_state
+        )
+        self.run_prediction_button.pack(pady=0)
+
+        # Add format tags for styling
+        self.label.tag_configure("label", foreground="black", font=("Arial", 14, "bold"))
+        self.label.tag_configure("tactic", foreground="darkgreen", font=("Arial", 14, "bold"))
+
+        self.label.configure(state=tk.DISABLED)
+        self.label.pack(side="top", fill="x", expand=True)
+        self.pack(side="top", fill="x")
+
+    def check_graphs(self):
+        """Enables the run prediction button if labeled frame data exists."""
+        if self.parent.dm is None:
+            return
+
+        label_folder = (
+            Path.cwd()
+            / "research_project"
+            / "graphs"
+            / f"{self.parent.dm.get_match_id()}"
+        )
+
+        if label_folder.exists() and label_folder.is_dir() and self.predictor is None:
+            self.run_prediction_button.configure(state="normal")
+        else:
+            self.run_prediction_button.configure(state="disabled")
+
+
+    def update_prediction(self, tactic_name: str):
+        """Updates the label with the predicted tactic name."""
+        self.label.configure(state=tk.NORMAL)
+        self.label.delete("1.0", tk.END)
+
+        self.label.insert(tk.END, "Predicted tactic: ", "label")
+        self.label.insert(tk.END, tactic_name, "tactic")
+
+        self.label.configure(state=tk.DISABLED)
+
+    def clear_prediction(self):
+        """Clears the prediction label."""
+        self.label.configure(state=tk.NORMAL)
+        self.label.delete("1.0", tk.END)
+        self.label.configure(state=tk.DISABLED)
+
+    def run_predictor(self):
+        self.predictor = Predictor(
+            Path.cwd()
+            / "research_project"
+            / "models"
+            / "checkpoint1.pt",
+            Path.cwd()
+            / "research_project"
+            / "graphs"
+            / f"{self.parent.dm.get_match_id()}"
+        )
+        self.predictor_output = self.predictor.predict()
+        print(self.predictor_output)
+        self.update_prediction("t_rush_b")
