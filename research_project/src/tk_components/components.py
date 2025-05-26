@@ -47,6 +47,7 @@ class MainApplication(ttk.Frame):
     player_status_sidebar: "PlayerStatusSidebar"
     round_select_bar: "RoundSelectBar"
     timeline_bar: "TimelineBar"
+    tactics_sidebar: "TacticsSidebar"
 
     def __init__(self, root: tk.Tk, *args, **kwargs):
         ttk.Frame.__init__(self, root, *args, **kwargs)
@@ -63,6 +64,9 @@ class MainApplication(ttk.Frame):
 
         self.round_select_bar = RoundSelectBar(self)
         self.round_select_bar.pack(side="bottom", fill="x")
+
+        self.tactics_sidebar = TacticsSidebar(self)
+        self.tactics_sidebar.pack(side="right", fill="y")
 
         self.player_status_sidebar = PlayerStatusSidebar(self)
         self.player_status_sidebar.pack(side="right", fill="y")
@@ -81,6 +85,7 @@ class MainApplication(ttk.Frame):
         self.vm = VisualizationManager.from_data_manager(self.dm)
         self.canvas.draw_current_map()
         self.round_select_bar.update_round_list()
+        self.tactics_sidebar.load_tactic_labels_list()
 
         # Make sure there is a first round to draw before drawing it
         if self.dm.get_round_count() < 0:
@@ -272,35 +277,6 @@ class TopBarMenu(ttk.Frame):
 
         self.heatmap_menu = heatmap_menus
 
-        # GNN Predictions menu
-
-        predictions_menu = tk.Menu(top_bar, tearoff=False)
-        top_bar.add_cascade(label="Predictions", menu=predictions_menu)
-        predictions_menu.add_command(
-            label="Save Tactic Labels File", command=self.save_tactic_labels_file
-        )
-        predictions_menu.add_command(
-            label="Load Tactic Labels File", command=self.load_tactic_labels_file
-        )
-        predictions_menu.add_separator()
-        predictions_menu.add_command(
-            label="Set Labeller Default Frame Number",
-            command=self.set_labeller_default_preview_frame,
-        )
-        predictions_menu.add_separator()
-        predictions_menu.add_command(
-            label="Open Tactic Labeller", command=self.open_tactic_labeller
-        )
-
-        predictions_menu.entryconfigure("Save Tactic Labels File", state=tk.DISABLED)
-        predictions_menu.entryconfigure("Load Tactic Labels File", state=tk.DISABLED)
-        predictions_menu.entryconfigure(
-            "Set Labeller Default Frame Number", state=tk.DISABLED
-        )
-        predictions_menu.entryconfigure("Open Tactic Labeller", state=tk.DISABLED)
-
-        self.predictions_menu = predictions_menu
-
         self.pack(side="top", fill="x")
 
     def open_demo_file(self):
@@ -347,12 +323,6 @@ class TopBarMenu(ttk.Frame):
             HeatmapMenuButtonNames.GENERATE_ROUTINES_HEATMAP_FROM_DIRECTORY.value,
             state=tk.NORMAL,
         )
-
-        self.predictions_menu.entryconfigure("Load Tactic Labels File", state=tk.NORMAL)
-        self.predictions_menu.entryconfigure(
-            "Set Labeller Default Frame Number", state=tk.NORMAL
-        )
-        self.predictions_menu.entryconfigure("Open Tactic Labeller", state=tk.NORMAL)
 
     def toggle_routine_visibility(self):
         """Toggles the visibility of player routines on the map."""
@@ -669,148 +639,6 @@ class TopBarMenu(ttk.Frame):
             HeatmapMenuButtonNames.CLEAR_HEATMAP.value, state=tk.DISABLED
         )
 
-    def save_tactic_labels_file(self):
-        """Stub func"""
-
-    def load_tactic_labels_file(self):
-        """Stub func"""
-
-    def set_labeller_default_preview_frame(self):
-        """Prompts the user for a desired labeller default frame that is previewed when a round is instantiated and sets the VisualizationManager's labeller default preview frame to that value."""
-        if self.main_app.vm is None:
-            raise ValueError("VisualizationManager not initialized.")
-
-        response = simpledialog.askinteger(
-            "Set Labeller Default Preview Frame Number",
-            "Enter the frame number:",
-            initialvalue=self.main_app.vm.labeller_default_preivew_frame,
-        )
-        if response is not None:
-            if response < 0:
-                messagebox.showerror(
-                    "Invalid Frame Number", "Frame number must be greater or equal to 0."
-                )
-                return
-            self.main_app.vm.labeller_default_preivew_frame = response
-
-    def load_tactic_labels_list(self):
-        input_folder = Path.cwd() / "research_project" / "tactic_labels" / "de_dust2_tactics.json"
-        with open(input_folder, "r") as f:
-            self.tactic_labels = json.load(f)
-
-    def save_frame_tactic(self, tactic_id = None):
-        selection_start = self.main_app.timeline_bar.selection_start_frame
-        selection_end = self.main_app.timeline_bar.selection_end_frame
-        if selection_start is None or selection_end is None:
-            return
-
-        match_id = self.main_app.dm.get_match_id()
-        round_index = self.main_app.vm.current_round_index
-        frame_index = self.main_app.vm.current_frame_index
-
-        output_folder = Path.cwd() / "research_project" / "tactic_labels" / f"{self.main_app.dm.get_map_name()}" / match_id
-        output_folder.mkdir(parents=True, exist_ok=True)
-
-        output_file = output_folder / f"{match_id}_{round_index + 1}.json"
-
-        # Load existing data if the file exists
-        if output_file.exists():
-            with open(output_file, "r") as f:
-                round_tactic_data = json.load(f)
-        else:
-            round_tactic_data = {}
-
-        # Ensure consistent ordering
-        frame_range = range(min(selection_start, selection_end), max(selection_start, selection_end) + 1)
-
-        if tactic_id is None:
-            # Remove tactic entries for these frames
-            for frame in frame_range:
-                round_tactic_data.pop(str(frame), None)
-        else:
-            # Assign tactic ID
-            for frame in frame_range:
-                round_tactic_data[str(frame)] = tactic_id
-
-        # Save json
-        with open(output_file, "w") as f:
-            json.dump(round_tactic_data, f, indent=4)
-
-        self.main_app.timeline_bar._deselect_frames()
-        self.main_app.timeline_bar.reset_timeline_bar(round_index)
-        self.main_app.timeline_bar.set_timeline_bar_progress(round_index, frame_index)
-
-    def labeller_round_change(self, round_index, previous=None):
-        if previous and round_index.get() == 1: # Handle pressing previous if first round
-            return
-        elif previous:
-            round_index.set(round_index.get() - 1)
-        elif round_index.get() == self.main_app.dm.get_round_count(): # Handle pressing next if last round
-            return
-        else:
-            round_index.set(round_index.get() + 1)
-        
-        self.main_app.canvas.draw_round(round_index.get() - 1)
-        self.main_app.vm.current_frame_index = self.main_app.vm.labeller_default_preivew_frame
-
-        self.main_app.vm.revisualize()
-        self.main_app.reload_visualization_widgets()
-
-    def open_tactic_labeller(self):
-        round_index = tk.IntVar(value=1)
-        selection_start_frame = tk.IntVar(value=0)
-        self.load_tactic_labels_list()
-        self.main_app.canvas.draw_round(round_index.get() - 1)
-        self.main_app.vm.current_frame_index = self.main_app.vm.labeller_default_preivew_frame
-        self.main_app.vm.revisualize()
-        self.main_app.reload_visualization_widgets()
-        labeller = tk.Toplevel()
-        '''
-        tk.Label(labeller, text="Current round").pack(pady=0)
-        tk.Label(labeller, textvariable=round_index).pack(pady=0)
-        # Create a container frame for the buttons
-        button_frame = tk.Frame(labeller)
-        button_frame.pack(pady=0)
-
-        # Previous Round button
-        tk.Button(
-            button_frame,
-            text="Previous",
-            width=10,
-            height=2,
-            command=lambda: self.labeller_round_change(round_index, True),
-        ).pack(side="left", padx=0)
-
-        # Next Round button
-        tk.Button(
-            button_frame,
-            text="Next",
-            width=10,
-            height=2,
-            command=lambda: self.labeller_round_change(round_index),
-        ).pack(side="left", padx=0)
-        '''
-        tk.Label(labeller, text="Tactics").pack(pady=0)
-        for tactic in self.tactic_labels:
-            tk.Button(
-                labeller,
-                text=tactic["name"],
-                width = 24,
-                height = 2,
-                command=lambda tactic_id=tactic["id"]: self.save_frame_tactic(
-                    tactic_id
-                ),
-            ).pack(pady=2)
-        tk.Button(
-            labeller,
-            text="DELETE TACTIC",
-            width = 24,
-            height = 2,
-            command=lambda tactic_id=None: self.save_frame_tactic(
-                tactic_id
-            ),
-        ).pack(pady=2)
-
 class CanvasPanel(ttk.Frame):
     """Panel for displaying plots."""
 
@@ -910,6 +738,9 @@ class RoundSelectBar(ttk.Frame):
         ttk.Frame.__init__(self, parent, *args, **kwargs)
         self.parent = parent
 
+        # Initialize empty button storage list
+        self.round_buttons: list[tk.Button] = []
+
         # Create GUI here
         self._create_round_buttons()
 
@@ -919,6 +750,9 @@ class RoundSelectBar(ttk.Frame):
         """Creates buttons for each round in the selected demo. If no demo is selected, creates a dummy set of 25 disabled buttons."""
         round_count = 31 if self.parent.dm is None else self.parent.dm.get_round_count()
         button_state = "disabled" if self.parent.dm is None else "normal"
+
+        self.round_buttons.clear()  # Clear old references
+
         for round_index in range(round_count):
             # Add a button for each round
             round_number = round_index + 1
@@ -932,11 +766,17 @@ class RoundSelectBar(ttk.Frame):
                 state=button_state,
             )
             round_button.pack(side="left", fill="x", expand=True)
+            self.round_buttons.append(round_button)
 
     def _go_to_round(self, round_index: int):
         """Updates the visualization to show the start of the round specified by `round_index`."""
         self.parent.canvas.draw_round(round_index)
         self.parent.reload_visualization_widgets()
+
+    def disable_round_button(self, round_index: int):
+        """"""
+        if 0 <= round_index < len(self.round_buttons):
+            self.round_buttons[round_index].configure(state="disabled")
 
     def update_round_list(self):
         """Updates the list of round buttons."""
@@ -958,10 +798,11 @@ class TimelineBar(ttk.Frame):
         self.parent = parent
 
         # Initialize empty selection
-        self.selection_active = False # Stub implementation for later
+        self.selection_active = False
         self.selection_start_frame = None
         self.selection_end_frame = None
         self.selection_marker = None
+        self.selection_drag_side = None
 
         # Create GUI here
 
@@ -1048,7 +889,6 @@ class TimelineBar(ttk.Frame):
                 )
             )
         )
-        '''
         timeline_canvas.bind(
             "<MouseWheel>",
             lambda e: self._jump_to_frame(
@@ -1060,7 +900,10 @@ class TimelineBar(ttk.Frame):
                 )
             )
         )
-        '''
+        timeline_canvas.bind(
+            "<ButtonRelease-3>",
+            self.selection_button_release
+        )
         self.visualized_round_index = round_index
 
         if round_index is not None:
@@ -1110,9 +953,9 @@ class TimelineBar(ttk.Frame):
         self.parent.vm.revisualize()
         # Reload visualization widgets
         self.parent.reload_visualization_widgets()
-
+    
     def _select_frame(self, event: tk.Event):
-        """Sets the current frame of the visualization to the frame that corresponds to the point clicked on in the timeline bar. Doesn't do anything if no demo is loaded."""
+        """Selects a portion of frames on the timeline bar and sets the current frame in the visualization."""
         if self.parent.dm is None:
             return
         if self.parent.vm is None:
@@ -1126,9 +969,23 @@ class TimelineBar(ttk.Frame):
 
         frame_index = int(event.x / self._get_pixels_per_frame(self.visualized_round_index))
 
-        if self.selection_start_frame is None:
+        if not self.selection_active:
+            # Initial selection start
             self.selection_start_frame = frame_index
-        self.selection_end_frame = frame_index
+            self.selection_end_frame = frame_index
+            self.selection_active = True
+            self.selection_drag_side = None
+        else:
+            # If already active, decide which side to update
+            if self.selection_drag_side is None:
+                dist_to_start = abs(frame_index - self.selection_start_frame)
+                dist_to_end = abs(frame_index - self.selection_end_frame)
+                self.selection_drag_side = "start" if dist_to_start < dist_to_end else "end"
+
+            if self.selection_drag_side == "start":
+                self.selection_start_frame = frame_index
+            else:
+                self.selection_end_frame = frame_index
 
         start = min(self.selection_start_frame, self.selection_end_frame)
         end = max(self.selection_start_frame, self.selection_end_frame) + 1
@@ -1156,12 +1013,16 @@ class TimelineBar(ttk.Frame):
         # Reload visualization widgets
         self.parent.reload_visualization_widgets()
 
+    def selection_button_release(self, event: tk.Event):
+        self.selection_drag_side = None
+
     def _deselect_frames(self, event: tk.Event = None):
         if self.selection_marker:
             self._timeline_canvas.delete(self.selection_marker)
         self.selection_active = False
         self.selection_start_frame = None
         self.selection_end_frame = None
+        self.selection_drag_side = None
         
     def _add_event_markers(self, round_index: int):
         """Adds markers to the timeline bar for each event that happened during the round specified by `round_index`."""
@@ -1256,6 +1117,10 @@ class TimelineBar(ttk.Frame):
             self.reset_timeline_bar(round_index)
             self._add_event_markers(round_index)
             self.load_timeline_tactics(round_index)
+
+            # Refresh round select bar as well
+            self.parent.round_select_bar.update_round_list()
+            self.parent.round_select_bar.disable_round_button(round_index)
 
         # Paint the canvas up to current_frame_index * pixels_per_tick in gray to indicate progress
         progress_bar_fill_length = int(
@@ -1475,3 +1340,94 @@ class PlayerStatusSidebar(ttk.Frame):
 
             for player in info[SideType.T]:
                 player_info_frame_map[player["name"]].set_info(player)
+
+class TacticsSidebar(ttk.Frame):
+    """"""
+
+    parent: MainApplication
+    tactic_labels: list
+    tactics: list[tk.Button]
+
+    def __init__(self, parent: MainApplication, *args, **kwargs):
+        ttk.Frame.__init__(self, parent, *args, **kwargs)
+        self.parent = parent
+        self.tactic_labels = []
+
+    def load_tactic_labels_list(self):
+        if self.parent.dm is None:
+            raise ValueError("DataManager not initialized.")
+        if self.parent.vm is None:
+            raise ValueError("VisualizationManager not initialized.")
+        
+        for widget in self.winfo_children():
+            widget.destroy()
+
+        input_path = Path.cwd() / "research_project" / "tactic_labels" / f"{self.parent.dm.get_map_name()}_tactics.json"
+
+        if not input_path.exists():
+            print(f"Tactic labels file not found at: {input_path}")
+            return
+
+        with open(input_path, "r") as f:
+            self.tactic_labels = json.load(f)
+
+        for tactic in self.tactic_labels:
+            tk.Button(
+                self,
+                text=tactic["name"],
+                width = 24,
+                command=lambda tactic_id=tactic["id"]: self.save_frame_tactic(
+                    tactic_id
+                ),
+            ).pack(side="top", fill="y", expand=True)
+        tk.Button(
+            self,
+            text="DELETE TACTIC",
+            width = 24,
+            height = 5,
+            command=lambda tactic_id=None: self.save_frame_tactic(
+                tactic_id
+            ),
+        ).pack(pady=0)
+
+    def save_frame_tactic(self, tactic_id = None):
+        selection_start = self.parent.timeline_bar.selection_start_frame
+        selection_end = self.parent.timeline_bar.selection_end_frame
+        if selection_start is None or selection_end is None:
+            return
+
+        match_id = self.parent.dm.get_match_id()
+        round_index = self.parent.vm.current_round_index
+        frame_index = self.parent.vm.current_frame_index
+
+        output_path = Path.cwd() / "research_project" / "tactic_labels" / f"{self.parent.dm.get_map_name()}" / match_id
+        output_path.mkdir(parents=True, exist_ok=True)
+
+        output_file = output_path / f"{match_id}_{round_index + 1}.json"
+
+        # Load existing data if the file exists
+        if output_file.exists():
+            with open(output_file, "r") as f:
+                round_tactic_data = json.load(f)
+        else:
+            round_tactic_data = {}
+
+        # Ensure consistent ordering
+        frame_range = range(min(selection_start, selection_end), max(selection_start, selection_end) + 1)
+
+        if tactic_id is None:
+            # Remove tactic entries for these frames
+            for frame in frame_range:
+                round_tactic_data.pop(str(frame), None)
+        else:
+            # Assign tactic ID
+            for frame in frame_range:
+                round_tactic_data[str(frame)] = tactic_id
+
+        # Save json
+        with open(output_file, "w") as f:
+            json.dump(round_tactic_data, f, indent=4)
+
+        self.parent.timeline_bar._deselect_frames()
+        self.parent.timeline_bar.reset_timeline_bar(round_index)
+        self.parent.timeline_bar.set_timeline_bar_progress(round_index, frame_index)
