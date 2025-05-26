@@ -32,11 +32,13 @@ class Predictor:
         optimizer = torch.optim.Adam(self.model.parameters(), lr=0.001)
         optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
 
+        self.model.to(self.device)
         self.model.eval()
         print(f"Model loaded from {model_path}")
 
     def predict(self):
         predictions = []
+        preds = []
         print("Predicting...")
         with torch.no_grad():
             for i, batch in enumerate(self.loader):
@@ -45,12 +47,8 @@ class Predictor:
                 pred = out.argmax(dim=1)
                 pred_labels = [self.id_to_label[p.item()] for p in pred]
                 predictions.append(pred_labels)
-                print(predictions[i])
-        return predictions
 
+        for i in predictions:
+            preds.append(i[0])
 
-print("Starting prediction...")
-Predictor(
-    model_path="research_project\models\checkpoint1.pt",
-    dataset_path="research_project\graphs\9aa73173-d219-4c36-9e49-6924ca12e2ed",
-).predict()
+        return preds
