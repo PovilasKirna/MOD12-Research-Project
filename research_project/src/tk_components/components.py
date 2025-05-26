@@ -910,6 +910,9 @@ class RoundSelectBar(ttk.Frame):
         ttk.Frame.__init__(self, parent, *args, **kwargs)
         self.parent = parent
 
+        # Initialize empty button storage list
+        self.round_buttons: list[tk.Button] = []
+
         # Create GUI here
         self._create_round_buttons()
 
@@ -919,6 +922,9 @@ class RoundSelectBar(ttk.Frame):
         """Creates buttons for each round in the selected demo. If no demo is selected, creates a dummy set of 25 disabled buttons."""
         round_count = 31 if self.parent.dm is None else self.parent.dm.get_round_count()
         button_state = "disabled" if self.parent.dm is None else "normal"
+
+        self.round_buttons.clear()  # Clear old references
+
         for round_index in range(round_count):
             # Add a button for each round
             round_number = round_index + 1
@@ -932,11 +938,17 @@ class RoundSelectBar(ttk.Frame):
                 state=button_state,
             )
             round_button.pack(side="left", fill="x", expand=True)
+            self.round_buttons.append(round_button)
 
     def _go_to_round(self, round_index: int):
         """Updates the visualization to show the start of the round specified by `round_index`."""
         self.parent.canvas.draw_round(round_index)
         self.parent.reload_visualization_widgets()
+
+    def disable_current_round_button(self, round_index: int):
+        """"""
+        if 0 <= round_index < len(self.round_buttons):
+            self.round_buttons[round_index].configure(state="disabled")
 
     def update_round_list(self):
         """Updates the list of round buttons."""
@@ -1256,6 +1268,10 @@ class TimelineBar(ttk.Frame):
             self.reset_timeline_bar(round_index)
             self._add_event_markers(round_index)
             self.load_timeline_tactics(round_index)
+            
+            # Refresh round select bar as well
+            self.parent.round_select_bar.update_round_list()
+            self.parent.round_select_bar.disable_current_round_button(round_index)
 
         # Paint the canvas up to current_frame_index * pixels_per_tick in gray to indicate progress
         progress_bar_fill_length = int(
