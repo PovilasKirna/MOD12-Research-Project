@@ -1149,6 +1149,13 @@ class TimelineBar(ttk.Frame):
             fill="lightblue", stipple="gray12", outline="gray", tags="selection"
         )
 
+        # Jump to that frame in the visualization
+        self.parent.vm.current_frame_index = frame_index
+        # Update the plot
+        self.parent.vm.revisualize()
+        # Reload visualization widgets
+        self.parent.reload_visualization_widgets()
+
     def _deselect_frames(self, event: tk.Event = None):
         if self.selection_marker:
             self._timeline_canvas.delete(self.selection_marker)
