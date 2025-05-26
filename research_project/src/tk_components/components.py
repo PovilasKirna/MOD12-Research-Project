@@ -125,6 +125,10 @@ class MainApplication(ttk.Frame):
             self.vm.current_round_index, self.vm.current_frame_index
         )
 
+        self.prediction_label.get_prediction_for_frame(
+            self.vm.current_round_index, self.vm.current_frame_index
+        )
+
         # Player status sidebar
         self.player_status_sidebar.update_player_info_frames()
 
@@ -1453,7 +1457,7 @@ class PredictionLabel(ttk.Frame):
         ttk.Frame.__init__(self, parent, *args, **kwargs)
         self.parent = parent
         self.predictor = None
-        predictor_output = []
+        self.predictor_output = []
 
         button_state = "disabled"
 
@@ -1491,14 +1495,26 @@ class PredictionLabel(ttk.Frame):
         else:
             self.run_prediction_button.configure(state="disabled")
 
+    def get_prediction_for_frame(self, round_index: int, frame_index: int):
+        if not self.predictor_output:
+            return
 
-    def update_prediction(self, tactic_name: str):
+        if round_index < 0 or round_index >= len(self.predictor_output):
+            return
+
+        if frame_index < 0 or frame_index >= len(self.predictor_output[round_index]):
+            return
+
+        predicted_tactic = self.predictor_output[round_index][frame_index]
+        self.update_prediction(predicted_tactic)
+
+    def update_prediction(self, tactic_id: str):
         """Updates the label with the predicted tactic name."""
         self.label.configure(state=tk.NORMAL)
         self.label.delete("1.0", tk.END)
 
         self.label.insert(tk.END, "Predicted tactic: ", "label")
-        self.label.insert(tk.END, tactic_name, "tactic")
+        self.label.insert(tk.END, tactic_id, "tactic")
 
         self.label.configure(state=tk.DISABLED)
 
@@ -1519,6 +1535,23 @@ class PredictionLabel(ttk.Frame):
             / "graphs"
             / f"{self.parent.dm.get_match_id()}"
         )
-        self.predictor_output = self.predictor.predict()
-        print(self.predictor_output)
-        self.update_prediction("t_rush_b")
+        # Get raw output (flat list of predictions)
+        raw_output = self.predictor.predict()
+
+        # Convert to nested list [round][frame]
+        self.predictor_output = self._structure_predictions_by_round(raw_output)
+
+    def _structure_predictions_by_round(self, flat_predictions: list):
+        """Convert a flat list of predictions into a nested list: predictions[round][frame]."""
+        if self.parent.dm is None:
+            raise ValueError("DataManager not initialized.")
+
+        structured = []
+        index = 0
+        for round_index in range(self.parent.dm.get_round_count()):
+            frame_count = self.parent.dm.get_frame_count(round_index)
+            round_predictions = flat_predictions[index: index + frame_count]
+            structured.append(round_predictions)
+            index += frame_count
+
+        return structured
