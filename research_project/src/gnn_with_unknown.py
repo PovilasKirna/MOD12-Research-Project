@@ -1,22 +1,23 @@
-import json
 import os
 import pickle
 from collections import Counter
 
+import joblib
 import numpy as np
 import torch
 import torch.nn.functional as F
+from sklearn.preprocessing import OneHotEncoder
 from sklearn.utils.class_weight import compute_class_weight
 from torch.nn import Dropout, Linear
 from torch.utils.data import Dataset, random_split
 from torch_geometric.data import Data
 from torch_geometric.loader import DataLoader
-from torch_geometric.nn import GATConv, global_add_pool
+from torch_geometric.nn import GCNConv, global_add_pool
 from torch_geometric.utils import add_self_loops
 
 
 class GraphDataset(Dataset):
-    def __init__(self, graph_root_dir, label_to_id=None):
+    def __init__(self, graph_root_dir, area_encoder=None, label_to_id=None):
         super().__init__()
         self.graph_root_dir = graph_root_dir
         self.all_graphs = []
@@ -30,26 +31,25 @@ class GraphDataset(Dataset):
                     with open(file_path, "rb") as f:
                         graphs_in_file = pickle.load(f)
                         if isinstance(graphs_in_file, list):
-                            # Only add if label is not "unknown"
                             for i, graph_data in enumerate(graphs_in_file):
-                                strategy = graph_data.get("graph_data", {}).get(
-                                    "strategy_used", "unknown"
-                                )
-                                if strategy != "unknown":
-                                    self.all_graphs.append((graph_data, file_path, i))
+                                self.all_graphs.append((graph_data, file_path, i))
                         else:
-                            strategy = graphs_in_file.get("graph_data", {}).get(
-                                "strategy_used", "unknown"
-                            )
-                            if strategy != "unknown":
-                                self.all_graphs.append((graphs_in_file, file_path, 0))
+                            self.all_graphs.append((graphs_in_file, file_path, 0))
 
         # Collect areaId for OneHotEncoder
         for graph_data, _, _ in self.all_graphs:
             for node_data in graph_data["nodes_data"].values():
                 self.area_ids.append([node_data.get("areaId", 0)])
 
-        # Collect x/y for normalization
+        if area_encoder is not None:
+            self.area_encoder = area_encoder
+        else:
+            self.area_encoder = OneHotEncoder(
+                sparse_output=False, handle_unknown="ignore"
+            )
+            self.area_encoder.fit(self.area_ids)
+
+        # Normalize position values
         self.all_x = []
         self.all_y = []
         for graph_data, _, _ in self.all_graphs:
@@ -69,42 +69,15 @@ class GraphDataset(Dataset):
             if self.global_max_y != self.global_min_y
             else 1
         )
-        # Collect edge features for normalization
-        self.all_edge_distances = []
-        for graph_data, _, _ in self.all_graphs:
-            for src, dst, edge_data in graph_data["edges_data"]:
-                # Assume edge_data is a dict or a value; adapt as needed
-                if isinstance(edge_data, dict):
-                    distance = edge_data.get("distance", 0)
-                else:
-                    distance = edge_data  # If edge_data is just the distance
-                self.all_edge_distances.append(distance)
-
-        self.global_min_edge_distance = min(self.all_edge_distances)
-        self.global_max_edge_distance = max(self.all_edge_distances)
-        self.global_edge_distance_range = (
-            self.global_max_edge_distance - self.global_min_edge_distance
-            if self.global_max_edge_distance != self.global_min_edge_distance
-            else 1
-        )
-
-        all_area_ids = [
-            node.get("areaId", 0)
-            for graph_data, _, _ in self.all_graphs
-            for node in graph_data["nodes_data"].values()
-        ]
-        self.num_areas = max(all_area_ids) + 1
 
         # Collect unique labels from all graphs
         if label_to_id is not None:
             self.label_to_id = label_to_id
         else:
-            with open(
-                "research_project\\tactic_labels\de_dust2_tactics.json", "r"
-            ) as f:
-                tactics = json.load(f)  # tactics is now a list of dicts
-
-            strategies = {item["id"] for item in tactics}
+            strategies = {
+                graph_data.get("graph_data", {}).get("strategy_used", "unknown")
+                for graph_data, _, _ in self.all_graphs
+            }
             self.label_to_id = {
                 label: idx for idx, label in enumerate(sorted(strategies))
             }
@@ -123,13 +96,7 @@ class GraphDataset(Dataset):
 
     def _process_graph_data(self, graph_dict, file_path, graph_idx):
         # selected_keys = ["x", "y", "hp", "armor", "isAlive", "hasBomb", "nodeType", "areaId"]
-        # print("Graph data keys:", graph_dict["graph_data"].keys(), ": ", graph_dict["graph_data"].values())
-
-        # Extract graph features
-        graph_data = graph_dict.get("graph_data", {})
-        graph_features = [
-            graph_data.get("seconds", 0) / 175.0,  # Normalize
-        ]
+        # print("Nodes data keys:", graph_dict["nodes_data"].values())
 
         # Extract node features
         node_dicts = graph_dict["nodes_data"].values()
@@ -142,8 +109,7 @@ class GraphDataset(Dataset):
             norm_x = (node.get("x", 0) - self.global_min_x) / self.global_x_range
             norm_y = (node.get("y", 0) - self.global_min_y) / self.global_y_range
 
-            area_id = node.get("areaId", 0)
-            area_id = min(area_id, self.num_areas - 1)
+            area_onehot = self.area_encoder.transform([[node.get("areaId", 0)]])[0]
 
             binary_flags = [
                 float(node.get("isAlive", 0)),
@@ -151,7 +117,10 @@ class GraphDataset(Dataset):
             ]
 
             full_feature = (
-                [hp, armor, utility] + list(binary_flags) + [area_id] + [norm_x, norm_y]
+                [hp, armor, utility]
+                + list(binary_flags)
+                + list(area_onehot)
+                + [norm_x, norm_y]
             )
             node_features.append(full_feature)
 
@@ -164,77 +133,43 @@ class GraphDataset(Dataset):
 
         # Validate and build edge index
         edge_list = []
-        edge_features = []
-        for src, dst, edge_data in graph_dict["edges_data"]:
+        for src, dst, _ in graph_dict["edges_data"]:
             if src in node_map and dst in node_map:
                 if node_map[src] < num_nodes and node_map[dst] < num_nodes:
                     edge_list.append([node_map[src], node_map[dst]])
-                    distance = edge_data.get("distance", 0)
-                    norm_distance = (
-                        distance - self.global_min_edge_distance
-                    ) / self.global_edge_distance_range
-                    edge_feat = [norm_distance]
-                    edge_features.append(edge_feat)
+                else:
+                    print(
+                        f"Warning: Invalid edge {src}->{dst} in graph {graph_idx} from {file_path}"
+                    )
+
         if not edge_list:
             raise ValueError(f"No valid edges in graph {graph_idx} from {file_path}")
+
         edge_index = torch.tensor(edge_list, dtype=torch.long).t().contiguous()
-        edge_attr = torch.tensor(edge_features, dtype=torch.float)
 
         # Add self-loops with validation
-        edge_index, edge_attr = add_self_loops(
-            edge_index, edge_attr=edge_attr, fill_value=0.0, num_nodes=num_nodes
-        )
+        edge_index, _ = add_self_loops(edge_index, num_nodes=num_nodes)
 
         # Extract label
         strategy = graph_dict.get("graph_data", {}).get("strategy_used", "unknown")
         label = self.label_to_id.get(strategy, 0)
 
-        return Data(
-            x=x,
-            edge_index=edge_index,
-            edge_attr=edge_attr,
-            y=torch.tensor(label, dtype=torch.long),
-            graph_feat=torch.tensor(graph_features, dtype=torch.float),
-        )
+        return Data(x=x, edge_index=edge_index, y=torch.tensor(label, dtype=torch.long))
 
 
 class GNN(torch.nn.Module):
-    def __init__(
-        self,
-        hidden_channels,
-        output_dim,
-        area_num_embeddings=8,
-        graph_feat_dim=1,
-        edge_dim=1,
-    ):
+    def __init__(self, input_dim, hidden_channels, output_dim):
         super().__init__()
-        self.area_embedding = torch.nn.Embedding(area_num_embeddings, 8)
-        self.conv1 = GATConv(
-            in_channels=15, out_channels=64, edge_dim=edge_dim, add_self_loops=False
-        )
-        self.conv2 = GATConv(
-            in_channels=hidden_channels, out_channels=hidden_channels, edge_dim=edge_dim
-        )
-        self.lin = Linear(hidden_channels + graph_feat_dim, output_dim)
+        self.conv1 = GCNConv(input_dim, hidden_channels)
+        self.conv2 = GCNConv(hidden_channels, hidden_channels)
+        self.lin = Linear(hidden_channels, output_dim)
         self.dropout = Dropout(0.6)
 
-    def forward(self, data):
-        x = data.x
-        edge_index = data.edge_index
-        edge_attr = data.edge_attr
-        batch_idx = data.batch
-        idx_area = 5
-        area_id = x[:, idx_area].long()
-        area_emb = self.area_embedding(area_id)
-        x = torch.cat([x[:, :idx_area], area_emb, x[:, idx_area + 1 :]], dim=1)
-        x = F.relu(self.conv1(x, edge_index, edge_attr))
+    def forward(self, x, edge_index, batch):
+        x = F.relu(self.conv1(x, edge_index))
         x = self.dropout(x)
-        x = F.relu(self.conv2(x, edge_index, edge_attr))
-        x = global_add_pool(x, batch_idx)
-
-        graph_feats = torch.stack([d.graph_feat for d in data.to_data_list()])
-        x = torch.cat([x, graph_feats.to(x.device)], dim=1)
-
+        x = F.relu(self.conv2(x, edge_index))
+        x = global_add_pool(x, batch)
         return self.lin(x)
 
 
@@ -265,15 +200,13 @@ def train():
     print(f"Train set size: {len(train_set)} Test set size: {len(test_set)}")
 
     # Model setup
-    graph_feat_dim = dataset[0].graph_feat.shape[0]
+    sample_graph = dataset[0]
+    input_dim = sample_graph.num_node_features
     output_dim = int(max(labels)) + 1
 
-    model = GNN(
-        hidden_channels=64,
-        output_dim=output_dim,
-        area_num_embeddings=dataset.num_areas,
-        graph_feat_dim=graph_feat_dim,
-    ).to(device)
+    model = GNN(input_dim=input_dim, hidden_channels=64, output_dim=output_dim).to(
+        device
+    )
     optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
     scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=10, gamma=0.5)
     loss_fn = torch.nn.CrossEntropyLoss(weight=class_weights)
@@ -288,7 +221,7 @@ def train():
         for batch in train_loader:
             batch = batch.to(device)
             optimizer.zero_grad()
-            out = model(batch)
+            out = model(batch.x, batch.edge_index, batch.batch)
             loss = loss_fn(out, batch.y)
             loss.backward()
             optimizer.step()
@@ -311,7 +244,7 @@ def train():
         with torch.no_grad():
             for batch in test_loader:
                 batch = batch.to(device)
-                out = model(batch)
+                out = model(batch.x, batch.edge_index, batch.batch)
                 pred = out.argmax(dim=1)
                 correct += (pred == batch.y).sum().item()
                 total += batch.y.size(0)
@@ -321,20 +254,38 @@ def train():
 
     # Save model
     os.makedirs("models", exist_ok=True)
-    # joblib.dump(dataset.label_to_id, "research_project/models/label_to_id2.pkl")
+    joblib.dump(dataset.area_encoder, "research_project/models/area_encoder.pkl")
+    joblib.dump(dataset.label_to_id, "research_project/models/label_to_id.pkl")
     torch.save(
         {
             "model_state_dict": model.state_dict(),
             "optimizer_state_dict": optimizer.state_dict(),
-            "input_dim": 15,
+            "input_dim": input_dim,
             "output_dim": output_dim,
-            "num_areas": dataset.num_areas,
         },
-        "research_project\models/checkpoint2.pt",
+        "research_project\models/checkpoint1.pt",
     )
 
     return model, dataset, class_weights
 
 
+# def interactive_round(pred_data):
+#     if pred_data is None:
+#         print("No prediction data available")
+#         return
+
+#     df = pd.DataFrame(pred_data["x"], columns=["x", "y"])
+#     fig = px.scatter(
+#         df,
+#         x="x",
+#         y="y",
+#         title=f"Pred: {pred_data['pred']} | True: {pred_data['true']}",
+#         color_discrete_sequence=["green" if pred_data['pred'] == pred_data['true'] else "red"]
+#     )
+#     fig.update_layout(width=600, height=500)
+#     fig.show()
+
+
 if __name__ == "__main__":
     pred_data = train()
+#    interactive_round(pred_data)
