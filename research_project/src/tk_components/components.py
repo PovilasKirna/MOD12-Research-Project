@@ -91,7 +91,7 @@ class MainApplication(ttk.Frame):
         self.vm = VisualizationManager.from_data_manager(self.dm)
         self.canvas.draw_current_map()
         self.round_select_bar.update_round_list()
-        self.tactics_sidebar.load_tactic_labels_list()
+        self.prediction_label.clear_prediction()
         self.prediction_label.check_graphs()
 
         # Make sure there is a first round to draw before drawing it
@@ -100,6 +100,9 @@ class MainApplication(ttk.Frame):
 
         # Draw the first round
         self.vm.draw_round_start(0)
+
+        # Load tactics later because of a disk read conflict with prediction labels
+        self.tactics_sidebar.load_tactic_labels_list()
 
         # Reload visualization widgets
         self.reload_visualization_widgets()
@@ -1523,6 +1526,9 @@ class PredictionLabel(ttk.Frame):
         self.label.configure(state=tk.NORMAL)
         self.label.delete("1.0", tk.END)
         self.label.configure(state=tk.DISABLED)
+        self.predictor = None
+        self.predictor_output = None
+        self.run_prediction_button.configure(state="disabled")
 
     def run_predictor(self):
         self.predictor = Predictor(
@@ -1540,6 +1546,10 @@ class PredictionLabel(ttk.Frame):
 
         # Convert to nested list [round][frame]
         self.predictor_output = self._structure_predictions_by_round(raw_output)
+
+        self.run_prediction_button.configure(state="disabled")
+
+        self.parent.reload_visualization_widgets()
 
     def _structure_predictions_by_round(self, flat_predictions: list):
         """Convert a flat list of predictions into a nested list: predictions[round][frame]."""
