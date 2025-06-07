@@ -1,3 +1,4 @@
+import argparse
 import asyncio
 import os
 
@@ -7,6 +8,15 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+# add this so that the script is aligned with create_graphs.py
+parser = argparse.ArgumentParser(description="Process CS:GO demo graphs.")
+parser.add_argument(
+    "-no-dc-webhooks",
+    action="store_true",
+    help="Disable Discord webhook progress updates (default: False)",
+)
+args = parser.parse_args()
+
 
 WEBHOOK_URL = (
     os.environ.get("TESTING_WEBHOOK_URL")
@@ -14,10 +24,11 @@ WEBHOOK_URL = (
     else os.environ.get("LIVE_WEBHOOK_URL")
 )
 
-if not WEBHOOK_URL:
-    raise ValueError(
-        "❌ WEBHOOK_URL is not set. Please check your .env file and environment variables."
-    )
+if not args.no_dc_webhooks:
+    if not WEBHOOK_URL:
+        raise ValueError(
+            "❌ WEBHOOK_URL is not set. Please check your .env file and environment variables."
+        )
 
 
 async def send_progress_embed(

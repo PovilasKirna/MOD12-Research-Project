@@ -87,7 +87,7 @@ NODE_TYPE_PLAYER_INDEX = (
 )
 NODE_TYPE_BOMB_INDEX = 900
 NODE_TYPE_TARGET_INDEX = 1
-WEAPON_ID_MAPPING = {  # TODO: add missing weapons
+WEAPON_ID_MAPPING = {
     "": 0,
     "Decoy Grenade": 1,
     "AK-47": 2,
@@ -143,6 +143,7 @@ def process_round(
     queue=None,
     key=None,
     logger=None,
+    strict=False,
 ) -> list[list[Any]]:
     round = dm.get_game_round(round_idx)
     map_name = dm.get_map_name()
@@ -151,6 +152,8 @@ def process_round(
     round_data = {key: round[key] for key in KEYS_ROUND_LEVEL}
 
     frames = dm._get_frames(round_idx)
+
+    logger.info("Processing round %d with %d frames." % (round_idx, len(frames)))
 
     # store crucial bomb events for later analysis and estimating correct round ingame seconds.
     bomb_event_data = stats.process_bomb_data(round)
@@ -164,9 +167,9 @@ def process_round(
         # check validity of frame
         valid_frame, err_text = stats.check_frame_validity(frame)
         if not valid_frame:
-            logger.debug(
-                "Skipping frame %d entirely because %s." % (frame_idx, err_text)
-            )
+            logger.warning(f"Frame {frame_idx} skipped: {err_text}")
+            if strict:
+                raise ValueError(f"Invalid frame {frame_idx}: {err_text}")
             if queue and key:
                 queue.put((key, 1))
             continue
@@ -229,10 +232,11 @@ def process_round(
             distance_A, distance_B = distance_bombsites(dm, nodes_data, logger=logger)
         except ValueError as exc:
             logger.warning(
-                "Frame %d (%f%%): %s" % (frame_idx, frame_idx / total_frames, exc)
+                f"Frame {frame_idx} in round {round_idx} skipped due to: {exc}"
             )
-            logger.exception(f"Round {round_idx}, Frame {frame_idx}: {exc}")
             error_frame_count += 1
+            if strict:
+                raise
             if queue and key:
                 queue.put((key, 1))
             continue  # skip errors
@@ -278,7 +282,9 @@ def process_round(
         graphs.append(graph)
         if queue and key:
             queue.put((key, 1))
-    # print("\n")
+    logger.info(
+        f"Round {round_idx}: {error_frame_count}/{total_frames} frames skipped."
+    )
     return graphs
 
 
@@ -296,7 +302,6 @@ def fill_keys(target: dict):
 
 
 def distance_bombsites(dm: DataManager, nodes: dict, logger=None):
-    logger.debug("Calculating shortest distances for %d nodes." % len(nodes))
     map_name = dm.get_map_name()
 
     if map_name not in NAV:
@@ -329,12 +334,38 @@ def distance_bombsites(dm: DataManager, nodes: dict, logger=None):
                 if current_bombsite_dist < closest_distances_B[key]:
                     closest_distances_B[key] = current_bombsite_dist
 
-    # sanity check
-    for dist in list(closest_distances_A.values()) + list(closest_distances_B.values()):
-        if dist == float("Inf"):
-            logger.warning(
-                "Could not find closest bombsite distances for at least one node."
-            )
+    # estimate the distances for nodes that are not reachable by neighbors
+    for dist_dict in [closest_distances_A, closest_distances_B]:
+        keys = list(dist_dict.keys())
+        for i, key in enumerate(keys):
+            if dist_dict[key] == float("Inf"):
+                # Try to estimate using neighbors
+                prev_dist = None
+                next_dist = None
+
+                # look backwards
+                for j in range(i - 1, -1, -1):
+                    if dist_dict[keys[j]] != float("Inf"):
+                        prev_dist = dist_dict[keys[j]]
+                        break
+
+                # look forward
+                for j in range(i + 1, len(keys)):
+                    if dist_dict[keys[j]] != float("Inf"):
+                        next_dist = dist_dict[keys[j]]
+                        break
+
+                if prev_dist is not None and next_dist is not None:
+                    dist_dict[key] = (prev_dist + next_dist) / 2
+                elif prev_dist is not None:
+                    dist_dict[key] = prev_dist
+                elif next_dist is not None:
+                    dist_dict[key] = next_dist
+                else:
+                    raise ValueError(
+                        "Could not estimate closest bombsite distances for node '%s'."
+                        % key
+                    )
 
     # collate to tuple and return
     return closest_distances_A, closest_distances_B
@@ -355,12 +386,15 @@ def _distance_internal(map_name, area_a, area_b, logger=None):
         ]
     # Else: calculate distance from pairwise iteration over all areas in map
     else:
-        if logger and logger.isEnabledFor(logging.DEBUG) and len(AREA_DIST_MATRIX) > 0:
-            logger.debug("Area matrix exists but does not contain areaid: %d" % area_a)
+        if logger and len(AREA_DIST_MATRIX) > 0:
+            logger.warning(
+                "Area matrix exists but does not contain areaid: %d" % area_a
+            )
         geodesic_path = area_distance(
             map_name=map_name, area_a=area_a, area_b=area_b, dist_type="geodesic"
         )
         current_bombsite_dist = geodesic_path["distance"]
+
     return current_bombsite_dist
 
 
@@ -370,6 +404,7 @@ async def process_single_demo(
     key=None,
     send_dc_webhooks=False,
     rewrite_graphed_rounds=False,
+    strict=False,
 ):
     # logger
     uuid = Path(demo_path).stem
@@ -379,7 +414,7 @@ async def process_single_demo(
         log_path, name=f"create_graphs_logger_{uuid}", level=logging.DEBUG
     )
 
-    dm = DataManager(Path(demo_path), do_validate=False, logger=logger)
+    dm = DataManager(Path(demo_path), do_validate=strict, logger=logger)
     output_folder = Path(__file__).parent / "../graphs/" / Path(demo_path).stem
     output_filename_template = str(output_folder / "graph-rounds-%d.pkl")
     output_folder.mkdir(parents=True, exist_ok=True)
@@ -441,7 +476,10 @@ async def process_single_demo(
 
         # Skip if not rewriting and file exists
         if not rewrite_graphed_rounds and Path(output_filename).exists():
-            logger.info(f"Skipping round {round_idx}: graph file already exists.")
+
+            logger.info(
+                f"Skipping round {round_idx} with {len(dm._get_frames(round_idx))} frames: graph file already exists."
+            )
             if queue and key:
                 estimated_frames = len(dm._get_frames(round_idx))
                 queue.put((key, estimated_frames))
@@ -457,6 +495,7 @@ async def process_single_demo(
             queue=queue,
             key=key,
             logger=logger,
+            strict=strict,  # reuse flag for now
         )
         with open(output_filename, "wb") as f:
             pickle.dump(graphs, f)
@@ -466,6 +505,10 @@ async def process_single_demo(
         processed_frames += len(graphs)
 
     logger.info("✅ SUCCESSFULLY COMPLETED: %d graphs written in total." % graphs_total)
+
+    if processed_frames < total_frames:
+        logger.warning(f"{total_frames - processed_frames} frames were skipped.")
+    logger.info(f"Processed {processed_frames} / {total_frames} frames.")
 
     if send_dc_webhooks:
         await send_progress_embed(
@@ -480,7 +523,12 @@ async def process_single_demo(
 
 
 def process_single_demo_sync(
-    demo_path, queue, key, send_dc_webhooks=False, rewrite_graphed_rounds=False
+    demo_path,
+    queue,
+    key,
+    send_dc_webhooks=False,
+    rewrite_graphed_rounds=False,
+    strictModeOn=False,
 ):
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
@@ -491,6 +539,7 @@ def process_single_demo_sync(
             key=key,
             send_dc_webhooks=send_dc_webhooks,
             rewrite_graphed_rounds=rewrite_graphed_rounds,
+            strict=strictModeOn,
         )
     )
 
@@ -555,7 +604,7 @@ def get_env_variables():
     )
 
 
-async def main(send_dc_webhooks=False, rewrite_graphed_rounds=False):
+async def main(send_dc_webhooks=False, rewrite_graphed_rounds=False, strict=False):
     batch_size, demo_filenames_path, create_graphs_filenames, create_graphs_demo_dir = (
         get_env_variables()
     )
@@ -583,7 +632,7 @@ async def main(send_dc_webhooks=False, rewrite_graphed_rounds=False):
 
     # Calculate total frames per demo for progress bars
     total_map = {
-        demo: len(DataManager(Path(demo), do_validate=False).get_all_frames())
+        demo: len(DataManager(Path(demo), do_validate=strict).get_all_frames())
         for demo in demo_pathnames
     }
     manager = Manager()
@@ -603,6 +652,7 @@ async def main(send_dc_webhooks=False, rewrite_graphed_rounds=False):
                     demo,
                     send_dc_webhooks=send_dc_webhooks,
                     rewrite_graphed_rounds=rewrite_graphed_rounds,
+                    strictModeOn=strict,
                 ),
             )
             for demo in demo_pathnames
@@ -617,20 +667,30 @@ parser = argparse.ArgumentParser(description="Process CS:GO demo graphs.")
 parser.add_argument(
     "-no-dc-webhooks",
     action="store_true",
-    help="Disable Discord webhook progress updates",
+    help="Disable Discord webhook progress updates (default: False)",
 )
 parser.add_argument(
     "-rewrite-graphed-rounds",
     action="store_true",
-    help="Rewrite rounds even if graph files already exist",
+    help="Rewrite rounds even if graph files already exist (default: True)",
+)
+
+parser.add_argument(
+    "-strict",
+    action="store_true",
+    help="Raise an error if a frame is invalid (default: False)",
 )
 args = parser.parse_args()
 
 if __name__ == "__main__":
+    print("Starting graph creation...")
+    print(f"Arguments: {args}")
+
     loop = asyncio.get_event_loop()
     loop.run_until_complete(
         main(
             send_dc_webhooks=not args.no_dc_webhooks,
             rewrite_graphed_rounds=args.rewrite_graphed_rounds,
+            strict=args.strict,
         )
     )

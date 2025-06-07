@@ -29,19 +29,85 @@ game_validator = TypeAdapter(Game)
 # This function exists outside of DataManager in case we want to use it elsewhere
 def _load_game_data(file_path: Path, do_validate: bool = True, logger=None) -> Game:
     """Loads a JSON file containing a Game object. If `do_validate` is True, the data will be validated against the Game schema."""
+
+    def is_valid_player(p: dict) -> bool:
+        required_fields = [
+            "eyeX",
+            "eyeY",
+            "eyeZ",
+            "flashGrenades",
+            "smokeGrenades",
+            "heGrenades",
+            "fireGrenades",
+            "lastPlaceName",
+            "isBot",
+        ]
+        return all(field in p for field in required_fields)
+
+    def is_valid_frame(frame: dict) -> bool:
+        return (
+            isinstance(frame.get("frameID"), int)
+            and isinstance(frame.get("globalFrameID"), int)
+            and isinstance(frame.get("clockTime"), str)
+        )
+
+    def sanitize_game_data(game_data: dict, file_path: Path) -> dict:
+        # Drop root-level fields if missing
+        required_root_keys = ["chatMessages", "parserParameters"]
+        for key in required_root_keys:
+            game_data.setdefault(key, {} if key == "parserParameters" else [])
+
+        # Ensure required nested parser fields
+        game_data["parserParameters"].setdefault("parseChat", False)
+
+        # Add missing matchID from file name if not present
+        game_data.setdefault("matchID", file_path.stem)
+
+        for rnd in game_data.get("gameRounds", []):
+            if "frames" in rnd:
+                rnd["frames"] = [
+                    frame for frame in rnd["frames"] if is_valid_frame(frame)
+                ]
+                for frame in rnd["frames"]:
+                    for side in ("ct", "t"):
+                        if side in frame and "players" in frame[side]:
+                            frame[side]["players"] = [
+                                p for p in frame[side]["players"] if is_valid_player(p)
+                            ]
+            if "kills" in rnd:
+                for kill in rnd["kills"]:
+                    kill.setdefault("playerTradedSide", None)
+
+        return game_data
+
     with open(file_path, "r") as file:
         try:
             data = json.load(file)
             if do_validate:
+                data = sanitize_game_data(data, file_path)
+                if logger:
+                    logger.info(
+                        f"Validating demo data against Game schema for file {file_path.name}"
+                    )
+                else:
+                    print(
+                        f"Validating demo data against Game schema for file {file_path.name}"
+                    )
+
                 return game_validator.validate_python(data)
+
             if logger:
                 logger.warning(
                     "Demo data was not validated against the Game schema on load. This may cause issues later on."
                 )
+            else:
+                print(
+                    "Demo data was not validated against the Game schema on load. This may cause issues later on."
+                )
             return data
         except ValidationError as e:
-            # TODO: Maybe handle this better
-            raise e
+            print(e)
+            raise RuntimeError("Schema validation failed during demo load.") from None
 
 
 class DataManager:
@@ -96,8 +162,11 @@ class DataManager:
     def get_all_frames(self) -> list[GameFrame]:
         """Returns a list of all GameFrame objects in the Game object."""
         frames = []
+        # Iterate through all rounds and collect frames
+        # This is done to avoid loading all frames into memory at once, which could be inefficient for large demos
         for round_index in range(self.get_round_count()):
             frames.extend(self._get_frames(round_index))
+
         return frames
 
     def get_frame(self, round_index: int, frame_index: int) -> GameFrame:
