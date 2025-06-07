@@ -11,8 +11,9 @@ from torch.nn import Dropout, Linear
 from torch.utils.data import Dataset, random_split
 from torch_geometric.data import Data
 from torch_geometric.loader import DataLoader
-from torch_geometric.nn import GATConv, global_add_pool
+from torch_geometric.nn import GCNConv, global_add_pool
 from torch_geometric.utils import add_self_loops
+from torchmetrics import Accuracy, F1Score, Precision, Recall
 
 
 class GraphDataset(Dataset):
@@ -44,10 +45,14 @@ class GraphDataset(Dataset):
                             if strategy != "unknown":
                                 self.all_graphs.append((graphs_in_file, file_path, 0))
 
-        # Collect areaId for OneHotEncoder
+        # Collect areaId
         for graph_data, _, _ in self.all_graphs:
             for node_data in graph_data["nodes_data"].values():
                 self.area_ids.append([node_data.get("areaId", 0)])
+
+        flat_area_ids = [item[0] for item in self.area_ids]
+        self.max_area_id = max(flat_area_ids)
+        self.num_areas = len(set(flat_area_ids))
 
         # Collect x/y for normalization
         self.all_x = []
@@ -69,31 +74,6 @@ class GraphDataset(Dataset):
             if self.global_max_y != self.global_min_y
             else 1
         )
-        # Collect edge features for normalization
-        self.all_edge_distances = []
-        for graph_data, _, _ in self.all_graphs:
-            for src, dst, edge_data in graph_data["edges_data"]:
-                # Assume edge_data is a dict or a value; adapt as needed
-                if isinstance(edge_data, dict):
-                    distance = edge_data.get("distance", 0)
-                else:
-                    distance = edge_data  # If edge_data is just the distance
-                self.all_edge_distances.append(distance)
-
-        self.global_min_edge_distance = min(self.all_edge_distances)
-        self.global_max_edge_distance = max(self.all_edge_distances)
-        self.global_edge_distance_range = (
-            self.global_max_edge_distance - self.global_min_edge_distance
-            if self.global_max_edge_distance != self.global_min_edge_distance
-            else 1
-        )
-
-        all_area_ids = [
-            node.get("areaId", 0)
-            for graph_data, _, _ in self.all_graphs
-            for node in graph_data["nodes_data"].values()
-        ]
-        self.num_areas = max(all_area_ids) + 1
 
         # Collect unique labels from all graphs
         if label_to_id is not None:
@@ -135,24 +115,20 @@ class GraphDataset(Dataset):
         node_dicts = graph_dict["nodes_data"].values()
         node_features = []
         for node in node_dicts:
-            hp = node.get("hp", 0) / 100.0  # normalize
-            armor = node.get("armor", 0) / 100.0  # normalize
+
             utility = node.get("totalUtility", 0)
 
             norm_x = (node.get("x", 0) - self.global_min_x) / self.global_x_range
             norm_y = (node.get("y", 0) - self.global_min_y) / self.global_y_range
-
-            area_id = node.get("areaId", 0)
-            area_id = min(area_id, self.num_areas - 1)
 
             binary_flags = [
                 float(node.get("isAlive", 0)),
                 float(node.get("hasBomb", 0)),
             ]
 
-            full_feature = (
-                [hp, armor, utility] + list(binary_flags) + [area_id] + [norm_x, norm_y]
-            )
+            area_id = node.get("areaId", 0) / self.max_area_id
+
+            full_feature = list(binary_flags) + [utility, area_id, norm_x, norm_y]
             node_features.append(full_feature)
 
         x = torch.tensor(node_features, dtype=torch.float)
@@ -164,26 +140,16 @@ class GraphDataset(Dataset):
 
         # Validate and build edge index
         edge_list = []
-        edge_features = []
         for src, dst, edge_data in graph_dict["edges_data"]:
             if src in node_map and dst in node_map:
-                if node_map[src] < num_nodes and node_map[dst] < num_nodes:
-                    edge_list.append([node_map[src], node_map[dst]])
-                    distance = edge_data.get("distance", 0)
-                    norm_distance = (
-                        distance - self.global_min_edge_distance
-                    ) / self.global_edge_distance_range
-                    edge_feat = [norm_distance]
-                    edge_features.append(edge_feat)
+                edge_list.append([node_map[src], node_map[dst]])
+
         if not edge_list:
             raise ValueError(f"No valid edges in graph {graph_idx} from {file_path}")
         edge_index = torch.tensor(edge_list, dtype=torch.long).t().contiguous()
-        edge_attr = torch.tensor(edge_features, dtype=torch.float)
 
         # Add self-loops with validation
-        edge_index, edge_attr = add_self_loops(
-            edge_index, edge_attr=edge_attr, fill_value=0.0, num_nodes=num_nodes
-        )
+        edge_index, _ = add_self_loops(edge_index, num_nodes=num_nodes)
 
         # Extract label
         strategy = graph_dict.get("graph_data", {}).get("strategy_used", "unknown")
@@ -192,7 +158,6 @@ class GraphDataset(Dataset):
         return Data(
             x=x,
             edge_index=edge_index,
-            edge_attr=edge_attr,
             y=torch.tensor(label, dtype=torch.long),
             graph_feat=torch.tensor(graph_features, dtype=torch.float),
         )
@@ -203,33 +168,20 @@ class GNN(torch.nn.Module):
         self,
         hidden_channels,
         output_dim,
-        area_num_embeddings=8,
         graph_feat_dim=1,
-        edge_dim=1,
     ):
         super().__init__()
-        self.area_embedding = torch.nn.Embedding(area_num_embeddings, 8)
-        self.conv1 = GATConv(
-            in_channels=15, out_channels=64, edge_dim=edge_dim, add_self_loops=False
-        )
-        self.conv2 = GATConv(
-            in_channels=hidden_channels, out_channels=hidden_channels, edge_dim=edge_dim
-        )
+        self.conv1 = GCNConv(in_channels=6, out_channels=64)
+        self.conv2 = GCNConv(in_channels=64, out_channels=64)
         self.lin = Linear(hidden_channels + graph_feat_dim, output_dim)
-        self.dropout = Dropout(0.6)
+        self.dropout = Dropout(0.5)
 
     def forward(self, data):
         x = data.x
         edge_index = data.edge_index
-        edge_attr = data.edge_attr
         batch_idx = data.batch
-        idx_area = 5
-        area_id = x[:, idx_area].long()
-        area_emb = self.area_embedding(area_id)
-        x = torch.cat([x[:, :idx_area], area_emb, x[:, idx_area + 1 :]], dim=1)
-        x = F.relu(self.conv1(x, edge_index, edge_attr))
-        x = self.dropout(x)
-        x = F.relu(self.conv2(x, edge_index, edge_attr))
+        x = F.relu(self.conv1(x, edge_index))
+        x = F.relu(self.conv2(x, edge_index))
         x = global_add_pool(x, batch_idx)
 
         graph_feats = torch.stack([d.graph_feat for d in data.to_data_list()])
@@ -271,7 +223,6 @@ def train():
     model = GNN(
         hidden_channels=64,
         output_dim=output_dim,
-        area_num_embeddings=dataset.num_areas,
         graph_feat_dim=graph_feat_dim,
     ).to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
@@ -279,7 +230,7 @@ def train():
     loss_fn = torch.nn.CrossEntropyLoss(weight=class_weights)
 
     # Training loop
-    for epoch in range(1, 101):
+    for epoch in range(1, 51):
         model.train()
         total_loss = 0
         correct = 0
@@ -306,19 +257,33 @@ def train():
 
         # Evaluate
         model.eval()
-        correct = 0
-        total = 0
+        num_classes = output_dim
+        accuracy = Accuracy(task="multiclass", num_classes=num_classes).to(device)
+        precision = Precision(
+            task="multiclass", num_classes=num_classes, average="macro"
+        ).to(device)
+        recall = Recall(task="multiclass", num_classes=num_classes, average="macro").to(
+            device
+        )
+        f1 = F1Score(task="multiclass", num_classes=num_classes, average="macro").to(
+            device
+        )
+
+        model.eval()
         with torch.no_grad():
             for batch in test_loader:
                 batch = batch.to(device)
                 out = model(batch)
                 pred = out.argmax(dim=1)
-                correct += (pred == batch.y).sum().item()
-                total += batch.y.size(0)
+                accuracy.update(pred, batch.y)
+                precision.update(pred, batch.y)
+                recall.update(pred, batch.y)
+                f1.update(pred, batch.y)
 
-        test_acc = correct / total if total else 0
-        print(f" → Test Accuracy: {test_acc:.2%}")
-
+        print(f"Accuracy: {accuracy.compute().item():.4f}")
+        print(f"Precision: {precision.compute().item():.4f}")
+        print(f"Recall: {recall.compute().item():.4f}")
+        print(f"F1-score: {f1.compute().item():.4f}")
     # Save model
     os.makedirs("models", exist_ok=True)
     # joblib.dump(dataset.label_to_id, "research_project/models/label_to_id2.pkl")
@@ -326,11 +291,11 @@ def train():
         {
             "model_state_dict": model.state_dict(),
             "optimizer_state_dict": optimizer.state_dict(),
-            "input_dim": 15,
+            "input_dim": 6,
             "output_dim": output_dim,
             "num_areas": dataset.num_areas,
         },
-        "research_project\models/checkpoint2.pt",
+        "research_project\models/checkpoint3_GCN.pt",
     )
 
     return model, dataset, class_weights

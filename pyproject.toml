@@ -74,6 +74,7 @@ plotly = "^6.1.1"
 torch = "2.1.0"
 scikit-learn = "^1.6.1"
 joblib = "^1.5.1"
+torchmetrics = "^1.7.2"
 
 
 [tool.poetry.group.dev.dependencies]
