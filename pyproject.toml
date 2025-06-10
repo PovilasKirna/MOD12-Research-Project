@@ -100,7 +100,7 @@ target-version = ["py311"]
 line-length = 88
 target-version = "py311"
 lint.extend-select = ["E", "F", "I"]
-lint.ignore = ["E501", "E711"]
+lint.ignore = ["E501", "E711", "E731"]
 
 [tool.ruff.format]
 quote-style = "double"

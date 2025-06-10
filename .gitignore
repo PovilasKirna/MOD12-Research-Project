@@ -11,3 +11,4 @@ logs/
 research_project/demos/
 .env.local
 .env
+.vscode
