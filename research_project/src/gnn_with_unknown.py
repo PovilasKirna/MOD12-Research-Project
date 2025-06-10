@@ -14,6 +14,7 @@ from torch_geometric.data import Data
 from torch_geometric.loader import DataLoader
 from torch_geometric.nn import GCNConv, global_add_pool
 from torch_geometric.utils import add_self_loops
+from torchmetrics import Accuracy, F1Score, Precision, Recall
 
 
 class GraphDataset(Dataset):
@@ -98,12 +99,18 @@ class GraphDataset(Dataset):
         # selected_keys = ["x", "y", "hp", "armor", "isAlive", "hasBomb", "nodeType", "areaId"]
         # print("Nodes data keys:", graph_dict["nodes_data"].values())
 
+        # Extract graph features
+        graph_data = graph_dict.get("graph_data", {})
+        graph_features = [
+            graph_data.get("seconds", 0) / 175.0,  # Normalize
+        ]
+
         # Extract node features
         node_dicts = graph_dict["nodes_data"].values()
         node_features = []
         for node in node_dicts:
-            hp = node.get("hp", 0) / 100.0  # normalize
-            armor = node.get("armor", 0) / 100.0  # normalize
+            # hp = node.get("hp", 0) / 100.0  # normalize
+            # armor = node.get("armor", 0) / 100.0  # normalize
             utility = node.get("totalUtility", 0)
 
             norm_x = (node.get("x", 0) - self.global_min_x) / self.global_x_range
@@ -117,10 +124,7 @@ class GraphDataset(Dataset):
             ]
 
             full_feature = (
-                [hp, armor, utility]
-                + list(binary_flags)
-                + list(area_onehot)
-                + [norm_x, norm_y]
+                [utility] + list(binary_flags) + list(area_onehot) + [norm_x, norm_y]
             )
             node_features.append(full_feature)
 
@@ -154,22 +158,35 @@ class GraphDataset(Dataset):
         strategy = graph_dict.get("graph_data", {}).get("strategy_used", "unknown")
         label = self.label_to_id.get(strategy, 0)
 
-        return Data(x=x, edge_index=edge_index, y=torch.tensor(label, dtype=torch.long))
+        return Data(
+            x=x,
+            edge_index=edge_index,
+            y=torch.tensor(label, dtype=torch.long),
+            graph_feat=torch.tensor(graph_features, dtype=torch.float),
+        )
 
 
 class GNN(torch.nn.Module):
-    def __init__(self, input_dim, hidden_channels, output_dim):
+    def __init__(self, input_dim, hidden_channels, output_dim, graph_feat_dim=1):
         super().__init__()
         self.conv1 = GCNConv(input_dim, hidden_channels)
         self.conv2 = GCNConv(hidden_channels, hidden_channels)
-        self.lin = Linear(hidden_channels, output_dim)
+        self.lin = Linear(hidden_channels + graph_feat_dim, output_dim)
         self.dropout = Dropout(0.6)
 
-    def forward(self, x, edge_index, batch):
+    def forward(self, data):
+        x = data.x
+        edge_index = data.edge_index
+        batch = data.batch
+
         x = F.relu(self.conv1(x, edge_index))
         x = self.dropout(x)
         x = F.relu(self.conv2(x, edge_index))
         x = global_add_pool(x, batch)
+
+        graph_feats = torch.stack([d.graph_feat for d in data.to_data_list()])
+        x = torch.cat([x, graph_feats.to(x.device)], dim=1)
+
         return self.lin(x)
 
 
@@ -201,13 +218,18 @@ def train():
 
     # Model setup
     sample_graph = dataset[0]
+    graph_feat_dim = dataset[0].graph_feat.shape[0]
     input_dim = sample_graph.num_node_features
     output_dim = int(max(labels)) + 1
+    hidden_channels = 64
 
-    model = GNN(input_dim=input_dim, hidden_channels=64, output_dim=output_dim).to(
-        device
-    )
-    optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
+    model = GNN(
+        input_dim=input_dim,
+        hidden_channels=hidden_channels,
+        output_dim=output_dim,
+        graph_feat_dim=graph_feat_dim,
+    ).to(device)
+    optimizer = torch.optim.AdamW(model.parameters(), lr=0.0002, weight_decay=1e-5)
     scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=10, gamma=0.5)
     loss_fn = torch.nn.CrossEntropyLoss(weight=class_weights)
 
@@ -221,7 +243,7 @@ def train():
         for batch in train_loader:
             batch = batch.to(device)
             optimizer.zero_grad()
-            out = model(batch.x, batch.edge_index, batch.batch)
+            out = model(batch)
             loss = loss_fn(out, batch.y)
             loss.backward()
             optimizer.step()
@@ -241,16 +263,33 @@ def train():
         model.eval()
         correct = 0
         total = 0
+        num_classes = output_dim
+        accuracy = Accuracy(task="multiclass", num_classes=num_classes).to(device)
+        precision = Precision(
+            task="multiclass", num_classes=num_classes, average="macro"
+        ).to(device)
+        recall = Recall(task="multiclass", num_classes=num_classes, average="macro").to(
+            device
+        )
+        f1 = F1Score(task="multiclass", num_classes=num_classes, average="macro").to(
+            device
+        )
         with torch.no_grad():
             for batch in test_loader:
                 batch = batch.to(device)
-                out = model(batch.x, batch.edge_index, batch.batch)
+                out = model(batch)
                 pred = out.argmax(dim=1)
                 correct += (pred == batch.y).sum().item()
                 total += batch.y.size(0)
+                accuracy.update(pred, batch.y)
+                precision.update(pred, batch.y)
+                recall.update(pred, batch.y)
+                f1.update(pred, batch.y)
 
-        test_acc = correct / total if total else 0
-        print(f" → Test Accuracy: {test_acc:.2%}")
+        print(f"Accuracy: {accuracy.compute().item():.2%}")
+        print(f"Precision: {precision.compute().item():.4f}")
+        print(f"Recall: {recall.compute().item():.4f}")
+        print(f"F1-score: {f1.compute().item():.4f}")
 
     # Save model
     os.makedirs("models", exist_ok=True)
@@ -260,32 +299,15 @@ def train():
         {
             "model_state_dict": model.state_dict(),
             "optimizer_state_dict": optimizer.state_dict(),
+            "hidden_channels": hidden_channels,
             "input_dim": input_dim,
             "output_dim": output_dim,
         },
-        "research_project\models/checkpoint1.pt",
+        "research_project\models/checkpoint7_with_unknown.pt",
     )
 
     return model, dataset, class_weights
 
 
-# def interactive_round(pred_data):
-#     if pred_data is None:
-#         print("No prediction data available")
-#         return
-
-#     df = pd.DataFrame(pred_data["x"], columns=["x", "y"])
-#     fig = px.scatter(
-#         df,
-#         x="x",
-#         y="y",
-#         title=f"Pred: {pred_data['pred']} | True: {pred_data['true']}",
-#         color_discrete_sequence=["green" if pred_data['pred'] == pred_data['true'] else "red"]
-#     )
-#     fig.update_layout(width=600, height=500)
-#     fig.show()
-
-
 if __name__ == "__main__":
     pred_data = train()
-#    interactive_round(pred_data)

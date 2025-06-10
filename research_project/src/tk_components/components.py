@@ -5,18 +5,13 @@ import subprocess
 import sys
 import tkinter as tk
 import tkinter.ttk as ttk
-
 from pathlib import Path
 from tkinter import filedialog, messagebox, simpledialog
 
 from awpy.visualization.plot import plot_map
 from matplotlib.backend_bases import key_press_handler
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
-from models.data_manager import DataManager
-from models.position_tracker import PositionTracker
-from models.routine_tracker import RoutineTracker
-from models.side_type import SideType
-from models.visualization_manager import VisualizationManager
+from predictor import Predictor
 from tk_components.imports import CanvasTooltip
 from tk_components.subcomponents import (
     FrameWithScrollableInnerFrame,
@@ -24,7 +19,12 @@ from tk_components.subcomponents import (
     PlayerInfoFrame,
     RoutineMenuButtonNames,
 )
-from predictor import Predictor
+
+from models.data_manager import DataManager
+from models.position_tracker import PositionTracker
+from models.routine_tracker import RoutineTracker
+from models.side_type import SideType
+from models.visualization_manager import VisualizationManager
 
 # TODO: Re-create more Noesis functionality.
 # DONE 1. A bar on the bottom that has a list of round numbers. Selecting a round number shows the start of that round on the plot.
@@ -653,6 +653,7 @@ class TopBarMenu(ttk.Frame):
             HeatmapMenuButtonNames.CLEAR_HEATMAP.value, state=tk.DISABLED
         )
 
+
 class CanvasPanel(ttk.Frame):
     """Panel for displaying plots."""
 
@@ -880,44 +881,39 @@ class TimelineBar(ttk.Frame):
         )  # Holding Mouse 1 down and dragging
 
         # Add selection functionality
-        timeline_canvas.bind(
-            "<B3-Motion>", self._select_frame
-        )
+        timeline_canvas.bind("<B3-Motion>", self._select_frame)
         # Delete selection
-        timeline_canvas.bind(
-            "<Button-2>", self._deselect_frames
-        )
+        timeline_canvas.bind("<Button-2>", self._deselect_frames)
 
         timeline_canvas.bind(
             "<Button-5>",
             lambda e: self._jump_to_frame(
                 frame_index=max(0, self.parent.vm.current_frame_index - 1)
-            )
+            ),
         )
         timeline_canvas.bind(
             "<Button-4>",
             lambda e: self._jump_to_frame(
                 frame_index=min(
                     self.parent.dm.get_frame_count(self.visualized_round_index) - 1,
-                    self.parent.vm.current_frame_index + 1
+                    self.parent.vm.current_frame_index + 1,
                 )
-            )
+            ),
         )
         timeline_canvas.bind(
             "<MouseWheel>",
             lambda e: self._jump_to_frame(
-                frame_index=max(0, self.parent.vm.current_frame_index - 1)
-                if e.delta > 0
-                else min(
-                    self.parent.dm.get_frame_count(self.visualized_round_index) - 1,
-                    self.parent.vm.current_frame_index + 1
+                frame_index=(
+                    max(0, self.parent.vm.current_frame_index - 1)
+                    if e.delta > 0
+                    else min(
+                        self.parent.dm.get_frame_count(self.visualized_round_index) - 1,
+                        self.parent.vm.current_frame_index + 1,
+                    )
                 )
-            )
+            ),
         )
-        timeline_canvas.bind(
-            "<ButtonRelease-3>",
-            self.selection_button_release
-        )
+        timeline_canvas.bind("<ButtonRelease-3>", self.selection_button_release)
         self.visualized_round_index = round_index
 
         if round_index is not None:
@@ -957,7 +953,9 @@ class TimelineBar(ttk.Frame):
                 return
             if event.x < 0 or event.x > self._timeline_canvas.winfo_width():
                 return
-            frame_index = int(event.x / self._get_pixels_per_frame(self.visualized_round_index)) # Clicked frame index
+            frame_index = int(
+                event.x / self._get_pixels_per_frame(self.visualized_round_index)
+            )  # Clicked frame index
         total_frames = self.parent.dm.get_frame_count(self.visualized_round_index)
         frame_index = max(0, min(frame_index, total_frames - 1))
 
@@ -967,7 +965,7 @@ class TimelineBar(ttk.Frame):
         self.parent.vm.revisualize()
         # Reload visualization widgets
         self.parent.reload_visualization_widgets()
-    
+
     def _select_frame(self, event: tk.Event):
         """Selects a portion of frames on the timeline bar and sets the current frame in the visualization."""
         if self.parent.dm is None:
@@ -976,12 +974,14 @@ class TimelineBar(ttk.Frame):
             return
         if self.visualized_round_index is None:
             return
-        
+
         # Check if the click was within the bounds of the timeline bar
         if event.x < 0 or event.x > self._timeline_canvas.winfo_width():
             return
 
-        frame_index = int(event.x / self._get_pixels_per_frame(self.visualized_round_index))
+        frame_index = int(
+            event.x / self._get_pixels_per_frame(self.visualized_round_index)
+        )
 
         if not self.selection_active:
             # Initial selection start
@@ -994,7 +994,9 @@ class TimelineBar(ttk.Frame):
             if self.selection_drag_side is None:
                 dist_to_start = abs(frame_index - self.selection_start_frame)
                 dist_to_end = abs(frame_index - self.selection_end_frame)
-                self.selection_drag_side = "start" if dist_to_start < dist_to_end else "end"
+                self.selection_drag_side = (
+                    "start" if dist_to_start < dist_to_end else "end"
+                )
 
             if self.selection_drag_side == "start":
                 self.selection_start_frame = frame_index
@@ -1012,12 +1014,18 @@ class TimelineBar(ttk.Frame):
         if self.selection_marker:
             self._timeline_canvas.delete(self.selection_marker)
 
-        timeline_height_center = int(self._timeline_canvas.winfo_height()/2)
+        timeline_height_center = int(self._timeline_canvas.winfo_height() / 2)
 
         # Draw new selection marker
         self.selection_marker = self._timeline_canvas.create_rectangle(
-            x_start, timeline_height_center - 30, x_end, timeline_height_center + 30,
-            fill="lightblue", stipple="gray12", outline="gray", tags="selection"
+            x_start,
+            timeline_height_center - 30,
+            x_end,
+            timeline_height_center + 30,
+            fill="lightblue",
+            stipple="gray12",
+            outline="gray",
+            tags="selection",
         )
 
         # Jump to that frame in the visualization
@@ -1037,7 +1045,7 @@ class TimelineBar(ttk.Frame):
         self.selection_start_frame = None
         self.selection_end_frame = None
         self.selection_drag_side = None
-        
+
     def _add_event_markers(self, round_index: int):
         """Adds markers to the timeline bar for each event that happened during the round specified by `round_index`."""
         if self.parent.dm is None:
@@ -1105,17 +1113,27 @@ class TimelineBar(ttk.Frame):
         self._timeline_canvas.delete("progress")
         self._timeline_canvas.delete("progress_current_frame")
         self._timeline_canvas.create_rectangle(
-            0, 0, x, self._timeline_canvas.winfo_height(), fill="lightgray", outline="", tags="progress"
+            0,
+            0,
+            x,
+            self._timeline_canvas.winfo_height(),
+            fill="lightgray",
+            outline="",
+            tags="progress",
         )
         self._timeline_canvas.tag_lower(
             "progress"
         )  # Lower the progress bar along the z-axis so that it doesn't cover the event markers
         self._timeline_canvas.create_rectangle(
-            x, 0, y, self._timeline_canvas.winfo_height(), fill="silver", outline="", tags="progress_current_frame"
+            x,
+            0,
+            y,
+            self._timeline_canvas.winfo_height(),
+            fill="silver",
+            outline="",
+            tags="progress_current_frame",
         )
-        self._timeline_canvas.tag_lower(
-            "progress_current_frame"
-        )
+        self._timeline_canvas.tag_lower("progress_current_frame")
         self._timeline_canvas.update()
 
     def set_timeline_bar_progress(self, round_index: int, current_frame_index: int = 0):
@@ -1143,21 +1161,30 @@ class TimelineBar(ttk.Frame):
         previewed_frame_end = int(
             (current_frame_index + 1) * self._get_pixels_per_frame(round_index)
         )
-        self._draw_progress_bar_fill_rectangle(progress_bar_fill_length, previewed_frame_end)
+        self._draw_progress_bar_fill_rectangle(
+            progress_bar_fill_length, previewed_frame_end
+        )
 
     def load_timeline_tactics(self, round_index: int):
         if self.parent.dm is None:
             raise ValueError("DataManager not initialized.")
         if self.parent.vm is None:
             raise ValueError("VisualizationManager not initialized.")
-        
+
         round_index_adjusted = round_index + 1
 
         match_id = self.parent.dm.get_match_id()
-        output_file = Path.cwd() / "research_project" / "tactic_labels" / f"{self.parent.dm.get_map_name()}" / match_id / f"{match_id}_{round_index_adjusted}.json"
+        output_file = (
+            Path.cwd()
+            / "research_project"
+            / "tactic_labels"
+            / f"{self.parent.dm.get_map_name()}"
+            / match_id
+            / f"{match_id}_{round_index_adjusted}.json"
+        )
 
         if not output_file.exists():
-            return 
+            return
 
         with open(output_file, "r") as f:
             round_tactic_data = json.load(f)
@@ -1168,7 +1195,9 @@ class TimelineBar(ttk.Frame):
         pixels_per_frame = self._get_pixels_per_frame(round_index)
 
         # Force re-sort frames
-        sorted_frames = sorted((int(frame), tactic) for frame, tactic in round_tactic_data.items())
+        sorted_frames = sorted(
+            (int(frame), tactic) for frame, tactic in round_tactic_data.items()
+        )
 
         segments = []
         current_tactic = None
@@ -1176,20 +1205,22 @@ class TimelineBar(ttk.Frame):
         last_frame = None
 
         for frame, tactic in sorted_frames:
-            if current_tactic is None: # Start segment
+            if current_tactic is None:  # Start segment
                 current_tactic = tactic
                 start_frame = frame
                 last_frame = frame
-            elif tactic == current_tactic and frame == last_frame + 1: # Continue segment
+            elif (
+                tactic == current_tactic and frame == last_frame + 1
+            ):  # Continue segment
                 last_frame = frame
-            else: # Save segment and start again
+            else:  # Save segment and start again
                 segments.append((start_frame, last_frame, current_tactic))
 
                 current_tactic = tactic
                 start_frame = frame
                 last_frame = frame
 
-        if current_tactic is not None: # Add final segment
+        if current_tactic is not None:  # Add final segment
             segments.append((start_frame, last_frame, current_tactic))
 
         alternate_color = False
@@ -1200,7 +1231,7 @@ class TimelineBar(ttk.Frame):
             else:
                 tactic_color = "goldenrod"
                 alternate_color = not alternate_color
-            last_frame += 1 # Adjust to cover the last frame of the tactic
+            last_frame += 1  # Adjust to cover the last frame of the tactic
             tactic_start_position = start_frame * pixels_per_frame
             tactic_end_position = last_frame * pixels_per_frame
             tactic_label_position = ((start_frame + last_frame) / 2) * pixels_per_frame
@@ -1212,15 +1243,15 @@ class TimelineBar(ttk.Frame):
                 fill=tactic_color,
                 width=10,
                 activewidth=15,
-                tags="test"
+                tags="test",
             )
-            tooltip_text = f'{tactic}'
+            tooltip_text = f"{tactic}"
             CanvasTooltip(self._timeline_canvas, tactic_marker, text=tooltip_text)
             self._timeline_canvas.create_text(
-                tactic_label_position, 
-                int((self._timeline_canvas.winfo_height() / 2)-16), 
+                tactic_label_position,
+                int((self._timeline_canvas.winfo_height() / 2) - 16),
                 text=f"{tactic}",
-                fill=tactic_color
+                fill=tactic_color,
             )
         self._timeline_canvas.update()
 
@@ -1355,6 +1386,7 @@ class PlayerStatusSidebar(ttk.Frame):
             for player in info[SideType.T]:
                 player_info_frame_map[player["name"]].set_info(player)
 
+
 class TacticsSidebar(ttk.Frame):
     """"""
 
@@ -1372,11 +1404,16 @@ class TacticsSidebar(ttk.Frame):
             raise ValueError("DataManager not initialized.")
         if self.parent.vm is None:
             raise ValueError("VisualizationManager not initialized.")
-        
+
         for widget in self.winfo_children():
             widget.destroy()
 
-        input_path = Path.cwd() / "research_project" / "tactic_labels" / f"{self.parent.dm.get_map_name()}_tactics.json"
+        input_path = (
+            Path.cwd()
+            / "research_project"
+            / "tactic_labels"
+            / f"{self.parent.dm.get_map_name()}_tactics.json"
+        )
 
         if not input_path.exists():
             print(f"Tactic labels file not found at: {input_path}")
@@ -1389,7 +1426,7 @@ class TacticsSidebar(ttk.Frame):
             tk.Button(
                 self,
                 text=tactic["name"],
-                width = 24,
+                width=24,
                 command=lambda tactic_id=tactic["id"]: self.save_frame_tactic(
                     tactic_id
                 ),
@@ -1397,14 +1434,12 @@ class TacticsSidebar(ttk.Frame):
         tk.Button(
             self,
             text="DELETE TACTIC",
-            width = 24,
-            height = 5,
-            command=lambda tactic_id=None: self.save_frame_tactic(
-                tactic_id
-            ),
+            width=24,
+            height=5,
+            command=lambda tactic_id=None: self.save_frame_tactic(tactic_id),
         ).pack(pady=0)
 
-    def save_frame_tactic(self, tactic_id = None):
+    def save_frame_tactic(self, tactic_id=None):
         selection_start = self.parent.timeline_bar.selection_start_frame
         selection_end = self.parent.timeline_bar.selection_end_frame
         if selection_start is None or selection_end is None:
@@ -1414,7 +1449,13 @@ class TacticsSidebar(ttk.Frame):
         round_index = self.parent.vm.current_round_index
         frame_index = self.parent.vm.current_frame_index
 
-        output_path = Path.cwd() / "research_project" / "tactic_labels" / f"{self.parent.dm.get_map_name()}" / match_id
+        output_path = (
+            Path.cwd()
+            / "research_project"
+            / "tactic_labels"
+            / f"{self.parent.dm.get_map_name()}"
+            / match_id
+        )
         output_path.mkdir(parents=True, exist_ok=True)
 
         output_file = output_path / f"{match_id}_{round_index + 1}.json"
@@ -1427,7 +1468,9 @@ class TacticsSidebar(ttk.Frame):
             round_tactic_data = {}
 
         # Ensure consistent ordering
-        frame_range = range(min(selection_start, selection_end), max(selection_start, selection_end) + 1)
+        frame_range = range(
+            min(selection_start, selection_end), max(selection_start, selection_end) + 1
+        )
 
         if tactic_id is None:
             # Remove tactic entries for these frames
@@ -1445,6 +1488,7 @@ class TacticsSidebar(ttk.Frame):
         self.parent.timeline_bar._deselect_frames()
         self.parent.timeline_bar.reset_timeline_bar(round_index)
         self.parent.timeline_bar.set_timeline_bar_progress(round_index, frame_index)
+
 
 class PredictionLabel(ttk.Frame):
     """Displays predicted tactic information."""
@@ -1469,13 +1513,17 @@ class PredictionLabel(ttk.Frame):
             self,
             text="Run Predictor",
             command=lambda tactic_id=None: self.run_predictor(),
-            state=button_state
+            state=button_state,
         )
         self.run_prediction_button.pack(pady=0)
 
         # Add format tags for styling
-        self.label.tag_configure("label", foreground="black", font=("Arial", 14, "bold"))
-        self.label.tag_configure("tactic", foreground="darkgreen", font=("Arial", 14, "bold"))
+        self.label.tag_configure(
+            "label", foreground="black", font=("Arial", 14, "bold")
+        )
+        self.label.tag_configure(
+            "tactic", foreground="darkgreen", font=("Arial", 14, "bold")
+        )
 
         self.label.configure(state=tk.DISABLED)
         self.label.pack(side="top", fill="x", expand=True)
@@ -1532,14 +1580,11 @@ class PredictionLabel(ttk.Frame):
 
     def run_predictor(self):
         self.predictor = Predictor(
-            Path.cwd()
-            / "research_project"
-            / "models"
-            / "checkpoint1.pt",
+            Path.cwd() / "research_project" / "models" / "checkpoint7.pt",
             Path.cwd()
             / "research_project"
             / "graphs"
-            / f"{self.parent.dm.get_match_id()}"
+            / f"{self.parent.dm.get_match_id()}",
         )
         # Get raw output (flat list of predictions)
         raw_output = self.predictor.predict()
@@ -1560,7 +1605,7 @@ class PredictionLabel(ttk.Frame):
         index = 0
         for round_index in range(self.parent.dm.get_round_count()):
             frame_count = self.parent.dm.get_frame_count(round_index)
-            round_predictions = flat_predictions[index: index + frame_count]
+            round_predictions = flat_predictions[index : index + frame_count]
             structured.append(round_predictions)
             index += frame_count
 
