@@ -133,7 +133,8 @@ class MainApplication(ttk.Frame):
         )
 
         # Player status sidebar
-        self.player_status_sidebar.update_player_info_frames()
+        # TODO: Update player info frames. Remove the lag because of this. Recursion depth exceeded error is caused.
+        # self.player_status_sidebar.update_player_info_frames()
 
     def exit(self):
         """Exits the application."""
