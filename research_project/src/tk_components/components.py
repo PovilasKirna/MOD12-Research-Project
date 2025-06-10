@@ -919,6 +919,7 @@ class TimelineBar(ttk.Frame):
         if round_index is not None:
             self._add_event_markers(round_index)
             self.load_timeline_tactics(round_index)
+            self.load_timeline_predictions(round_index)
 
     def _get_pixels_per_frame(self, round_index: int):
         """Returns the number of horizontal pixels in the timeline bar canvas allocated to each frame in round specified by `round_index`."""
@@ -1107,6 +1108,7 @@ class TimelineBar(ttk.Frame):
         if round_index is not None:
             self._add_event_markers(round_index)
             self.load_timeline_tactics(round_index)
+            self.load_timeline_predictions(round_index)
 
     def _draw_progress_bar_fill_rectangle(self, x: int, y: int):
         """Draws a rectangle in the progress bar starting from the left and ending at the x-coordinate specified by `x`."""
@@ -1149,6 +1151,7 @@ class TimelineBar(ttk.Frame):
             self.reset_timeline_bar(round_index)
             self._add_event_markers(round_index)
             self.load_timeline_tactics(round_index)
+            self.load_timeline_predictions(round_index)
 
             # Refresh round select bar as well
             self.parent.round_select_bar.update_round_list()
@@ -1237,9 +1240,9 @@ class TimelineBar(ttk.Frame):
             tactic_label_position = ((start_frame + last_frame) / 2) * pixels_per_frame
             tactic_marker = self._timeline_canvas.create_line(
                 tactic_start_position,
-                int(self._timeline_canvas.winfo_height() / 2),
+                int((self._timeline_canvas.winfo_height() / 2) - 20),
                 tactic_end_position,
-                int(self._timeline_canvas.winfo_height() / 2),
+                int((self._timeline_canvas.winfo_height() / 2) - 20),
                 fill=tactic_color,
                 width=10,
                 activewidth=15,
@@ -1249,7 +1252,80 @@ class TimelineBar(ttk.Frame):
             CanvasTooltip(self._timeline_canvas, tactic_marker, text=tooltip_text)
             self._timeline_canvas.create_text(
                 tactic_label_position,
-                int((self._timeline_canvas.winfo_height() / 2) - 16),
+                int((self._timeline_canvas.winfo_height() / 2) - 36),
+                text=f"{tactic}",
+                fill=tactic_color,
+            )
+        self._timeline_canvas.update()
+
+    def load_timeline_predictions(self, round_index: int):
+        if self.parent.dm is None:
+            raise ValueError("DataManager not initialized.")
+        if self.parent.vm is None:
+            raise ValueError("VisualizationManager not initialized.")
+
+        if not self.parent.prediction_label.predictor_output:
+            return
+
+        match_id = self.parent.dm.get_match_id()
+
+        predictor_output = self.parent.prediction_label.predictor_output
+
+        pixels_per_frame = self._get_pixels_per_frame(round_index)
+
+        segments = []
+        current_tactic = None
+        start_frame = None
+        last_frame = None
+
+        for frame, tactic in enumerate(predictor_output[round_index]):
+            if current_tactic is None:  # Start segment
+                current_tactic = tactic
+                start_frame = frame
+                last_frame = frame
+            elif (
+                tactic == current_tactic and frame == last_frame + 1
+            ):  # Continue segment
+                last_frame = frame
+            else:  # Save segment and start again
+                segments.append((start_frame, last_frame, current_tactic))
+
+                current_tactic = tactic
+                start_frame = frame
+                last_frame = frame
+
+        if current_tactic is not None:  # Add final segment
+            segments.append((start_frame, last_frame, current_tactic))
+
+        alternate_color = False
+        for start_frame, last_frame, tactic in segments:
+            if alternate_color:
+                tactic_color = "steelblue4"
+                label_spacing = -26
+                alternate_color = not alternate_color
+            else:
+                tactic_color = "steelblue3"
+                label_spacing = 0
+                alternate_color = not alternate_color
+            last_frame += 1  # Adjust to cover the last frame of the tactic
+            tactic_start_position = start_frame * pixels_per_frame
+            tactic_end_position = last_frame * pixels_per_frame
+            tactic_label_position = ((start_frame + last_frame) / 2) * pixels_per_frame
+            tactic_marker = self._timeline_canvas.create_line(
+                tactic_start_position,
+                int((self._timeline_canvas.winfo_height() / 2) + 20),
+                tactic_end_position,
+                int((self._timeline_canvas.winfo_height() / 2) + 20),
+                fill=tactic_color,
+                width=10,
+                activewidth=15,
+                tags="test2",
+            )
+            tooltip_text = f"{tactic}"
+            CanvasTooltip(self._timeline_canvas, tactic_marker, text=tooltip_text)
+            self._timeline_canvas.create_text(
+                tactic_label_position,
+                int((self._timeline_canvas.winfo_height() / 2) + 31 + label_spacing),
                 text=f"{tactic}",
                 fill=tactic_color,
             )
@@ -1506,23 +1582,21 @@ class PredictionLabel(ttk.Frame):
         self.predictor = None
         self.predictor_output = []
 
-        button_state = "disabled"
-
         self.label = tk.Text(self, font=("Arial", 14), height=1, wrap="none")
         self.run_prediction_button = tk.Button(
             self,
             text="Run Predictor",
             command=lambda tactic_id=None: self.run_predictor(),
-            state=button_state,
+            state="disabled",
         )
         self.run_prediction_button.pack(pady=0)
 
         # Add format tags for styling
         self.label.tag_configure(
-            "label", foreground="black", font=("Arial", 14, "bold")
+            "label", foreground="black", font=("Arial", 12)
         )
         self.label.tag_configure(
-            "tactic", foreground="darkgreen", font=("Arial", 14, "bold")
+            "tactic", foreground="steelblue", font=("Arial", 12, "bold")
         )
 
         self.label.configure(state=tk.DISABLED)
@@ -1550,11 +1624,11 @@ class PredictionLabel(ttk.Frame):
         if not self.predictor_output:
             return
 
-        if round_index < 0 or round_index >= len(self.predictor_output):
-            return
+        # if round_index < 0 or round_index >= len(self.predictor_output):
+        #     return
 
-        if frame_index < 0 or frame_index >= len(self.predictor_output[round_index]):
-            return
+        # if frame_index < 0 or frame_index >= len(self.predictor_output[round_index]):
+        #     return
 
         predicted_tactic = self.predictor_output[round_index][frame_index]
         self.update_prediction(predicted_tactic)
@@ -1593,8 +1667,9 @@ class PredictionLabel(ttk.Frame):
         self.predictor_output = self._structure_predictions_by_round(raw_output)
 
         self.run_prediction_button.configure(state="disabled")
-
+        
         self.parent.reload_visualization_widgets()
+        self.parent.timeline_bar.load_timeline_predictions(self.parent.timeline_bar.visualized_round_index)
 
     def _structure_predictions_by_round(self, flat_predictions: list):
         """Convert a flat list of predictions into a nested list: predictions[round][frame]."""
