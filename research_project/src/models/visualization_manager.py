@@ -429,7 +429,7 @@ class VisualizationManager:
                         transformed_t_x_dead,
                         transformed_t_y_dead,
                         c="goldenrod",
-                        alpha=0.5,
+                        alpha=0.3,
                     )
                 )
 
@@ -464,7 +464,7 @@ class VisualizationManager:
                         transformed_ct_x_dead,
                         transformed_ct_y_dead,
                         c="lightblue",
-                        alpha=0.5,
+                        alpha=0.3,
                     )
                 )
 
