@@ -4,7 +4,8 @@ import pickle
 
 import joblib
 import torch
-from gnn import GNN, GraphDataset
+from gnn import GNN
+from sklearn.preprocessing import OneHotEncoder
 from torch.utils.data import Dataset
 from torch_geometric.data import Data
 from torch_geometric.loader import DataLoader
@@ -12,7 +13,7 @@ from torch_geometric.utils import add_self_loops
 
 
 class GraphDatasetPredictor(Dataset):
-    def __init__(self, graph_root_dir, label_to_id=None):
+    def __init__(self, graph_root_dir, area_encoder=None, label_to_id=None):
         super().__init__()
         self.graph_root_dir = graph_root_dir
         self.all_graphs = []
@@ -31,15 +32,20 @@ class GraphDatasetPredictor(Dataset):
                         else:
                             self.all_graphs.append((graphs_in_file, file_path, 0))
 
-        # Collect areaId
+        # Collect areaId for OneHotEncoder
         for graph_data, _, _ in self.all_graphs:
             for node_data in graph_data["nodes_data"].values():
                 self.area_ids.append([node_data.get("areaId", 0)])
 
-        flat_area_ids = [item[0] for item in self.area_ids]
-        self.max_area_id = max(flat_area_ids)
+        if area_encoder is not None:
+            self.area_encoder = area_encoder
+        else:
+            self.area_encoder = OneHotEncoder(
+                sparse_output=False, handle_unknown="ignore"
+            )
+            self.area_encoder.fit(self.area_ids)
 
-        # Collect x/y for normalization
+        # Normalize position values
         self.all_x = []
         self.all_y = []
         for graph_data, _, _ in self.all_graphs:
@@ -67,12 +73,9 @@ class GraphDatasetPredictor(Dataset):
             with open(
                 "research_project\\tactic_labels\de_dust2_tactics.json", "r"
             ) as f:
-                tactics = json.load(f)  # tactics is now a list of dicts
-
-            strategies = {item["id"] for item in tactics}
-            self.label_to_id = {
-                label: idx for idx, label in enumerate(sorted(strategies))
-            }
+                tactics = json.load(f)
+            strategies = [item["id"] for item in tactics]
+            self.label_to_id = {label: idx for idx, label in enumerate(strategies)}
 
         # Convert each graph to a PyG Data object
         self.processed_graphs = [
@@ -88,7 +91,7 @@ class GraphDatasetPredictor(Dataset):
 
     def _process_graph_data(self, graph_dict, file_path, graph_idx):
         # selected_keys = ["x", "y", "hp", "armor", "isAlive", "hasBomb", "nodeType", "areaId"]
-        # print("Graph data keys:", graph_dict["graph_data"].keys(), ": ", graph_dict["graph_data"].values())
+        # print("Nodes data keys:", graph_dict["nodes_data"].values())
 
         # Extract graph features
         graph_data = graph_dict.get("graph_data", {})
@@ -100,20 +103,23 @@ class GraphDatasetPredictor(Dataset):
         node_dicts = graph_dict["nodes_data"].values()
         node_features = []
         for node in node_dicts:
-
+            # hp = node.get("hp", 0) / 100.0  # normalize
+            # armor = node.get("armor", 0) / 100.0  # normalize
             utility = node.get("totalUtility", 0)
 
             norm_x = (node.get("x", 0) - self.global_min_x) / self.global_x_range
             norm_y = (node.get("y", 0) - self.global_min_y) / self.global_y_range
+
+            area_onehot = self.area_encoder.transform([[node.get("areaId", 0)]])[0]
 
             binary_flags = [
                 float(node.get("isAlive", 0)),
                 float(node.get("hasBomb", 0)),
             ]
 
-            area_id = node.get("areaId", 0) / self.max_area_id
-
-            full_feature = list(binary_flags) + [utility, area_id, norm_x, norm_y]
+            full_feature = (
+                [utility] + list(binary_flags) + list(area_onehot) + [norm_x, norm_y]
+            )
             node_features.append(full_feature)
 
         x = torch.tensor(node_features, dtype=torch.float)
@@ -125,12 +131,18 @@ class GraphDatasetPredictor(Dataset):
 
         # Validate and build edge index
         edge_list = []
-        for src, dst, edge_data in graph_dict["edges_data"]:
+        for src, dst, _ in graph_dict["edges_data"]:
             if src in node_map and dst in node_map:
-                edge_list.append([node_map[src], node_map[dst]])
+                if node_map[src] < num_nodes and node_map[dst] < num_nodes:
+                    edge_list.append([node_map[src], node_map[dst]])
+                else:
+                    print(
+                        f"Warning: Invalid edge {src}->{dst} in graph {graph_idx} from {file_path}"
+                    )
 
         if not edge_list:
             raise ValueError(f"No valid edges in graph {graph_idx} from {file_path}")
+
         edge_index = torch.tensor(edge_list, dtype=torch.long).t().contiguous()
 
         # Add self-loops with validation
@@ -151,34 +163,37 @@ class GraphDatasetPredictor(Dataset):
 class Predictor:
     def __init__(self, model_path, dataset_path):
         self.model_path = model_path
-        self.model_path = "research_project\models\checkpoint3_GCN.pt"
+        self.model_path = "research_project\models\checkpoint7_with_unknown.pt"
         self.dataset_path = dataset_path
 
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
         # Load unlabeled data
         print("Loading unlabeled data...")
-        label_to_id = joblib.load("research_project/models/label_to_id2.pkl")
+        label_to_id = joblib.load("research_project/models/label_to_id.pkl")
+        area_encoder = joblib.load("research_project/models/area_encoder.pkl")
         self.id_to_label = {v: k for k, v in label_to_id.items()}
-        dataset = GraphDataset(self.dataset_path, label_to_id=label_to_id)
+        dataset = GraphDatasetPredictor(
+            self.dataset_path, label_to_id=label_to_id, area_encoder=area_encoder
+        )
         self.loader = DataLoader(dataset)
 
         print(f"Dataset loaded with {len(dataset)} graphs.")
         checkpoint = torch.load(self.model_path)
-        output_dim = checkpoint["output_dim"]
-        num_areas = checkpoint["num_areas"]
 
         self.model = GNN(
-            hidden_channels=64, output_dim=output_dim, area_num_embeddings=num_areas
+            input_dim=checkpoint["input_dim"],
+            hidden_channels=checkpoint["hidden_channels"],
+            output_dim=checkpoint["output_dim"],
         )
         self.model.load_state_dict(checkpoint["model_state_dict"])
 
-        optimizer = torch.optim.Adam(self.model.parameters(), lr=0.001)
+        optimizer = torch.optim.AdamW(self.model.parameters(), lr=0.0002)
         optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
 
         self.model.to(self.device)
         self.model.eval()
-        print(f"Model loaded from {model_path}")
+        print(f"Model loaded from {self.model_path}")
 
     def predict(self):
         predictions = []
