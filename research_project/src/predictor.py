@@ -203,7 +203,7 @@ class GraphDatasetPredictor(Dataset):
 class Predictor:
     def __init__(self, model_path, dataset_path):
         self.model_path = model_path
-        self.model_path = "research_project\models\checkpoint11.pt"
+        self.model_path = "research_project/models/checkpoint11.pt"
         self.dataset_path = dataset_path
 
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")

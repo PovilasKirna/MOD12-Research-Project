@@ -11,6 +11,11 @@ from tkinter import filedialog, messagebox, simpledialog
 from awpy.visualization.plot import plot_map
 from matplotlib.backend_bases import key_press_handler
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+from models.data_manager import DataManager
+from models.position_tracker import PositionTracker
+from models.routine_tracker import RoutineTracker
+from models.side_type import SideType
+from models.visualization_manager import VisualizationManager
 from predictor import Predictor
 from tk_components.imports import CanvasTooltip
 from tk_components.subcomponents import (
@@ -19,12 +24,6 @@ from tk_components.subcomponents import (
     PlayerInfoFrame,
     RoutineMenuButtonNames,
 )
-
-from models.data_manager import DataManager
-from models.position_tracker import PositionTracker
-from models.routine_tracker import RoutineTracker
-from models.side_type import SideType
-from models.visualization_manager import VisualizationManager
 
 # TODO: Re-create more Noesis functionality.
 # DONE 1. A bar on the bottom that has a list of round numbers. Selecting a round number shows the start of that round on the plot.
@@ -62,6 +61,9 @@ class MainApplication(ttk.Frame):
         self.top_bar_menu = TopBarMenu(self.root, self)
         self.top_bar_menu.pack(side="top", fill="x")
 
+        self.prediction_label = PredictionLabel(self)
+        self.prediction_label.pack(side="top", fill="x")
+
         self.timeline_bar = TimelineBar(self)
         self.timeline_bar.pack(side="bottom", fill="x")
 
@@ -79,9 +81,6 @@ class MainApplication(ttk.Frame):
 
         self.canvas = CanvasPanel(self)
         self.canvas.pack(side="top", fill="both", expand=True)
-
-        self.prediction_label = PredictionLabel(self)
-        self.prediction_label.pack(side="bottom", fill="x")
 
         self.pack(side="top", fill="both", expand=True)
 
@@ -134,7 +133,7 @@ class MainApplication(ttk.Frame):
 
         # Player status sidebar
         # TODO: Update player info frames. Remove the lag because of this. Recursion depth exceeded error is caused.
-        # self.player_status_sidebar.update_player_info_frames()
+        self.player_status_sidebar.update_player_info_frames()
 
     def exit(self):
         """Exits the application."""
@@ -1268,7 +1267,7 @@ class TimelineBar(ttk.Frame):
         if not self.parent.prediction_label.predictor_output:
             return
 
-        match_id = self.parent.dm.get_match_id()
+        # match_id = self.parent.dm.get_match_id()
 
         predictor_output = self.parent.prediction_label.predictor_output
 
@@ -1593,9 +1592,7 @@ class PredictionLabel(ttk.Frame):
         self.run_prediction_button.pack(pady=0)
 
         # Add format tags for styling
-        self.label.tag_configure(
-            "label", foreground="black", font=("Arial", 12)
-        )
+        self.label.tag_configure("label", foreground="black", font=("Arial", 12))
         self.label.tag_configure(
             "tactic", foreground="steelblue", font=("Arial", 12, "bold")
         )
@@ -1668,9 +1665,11 @@ class PredictionLabel(ttk.Frame):
         self.predictor_output = self._structure_predictions_by_round(raw_output)
 
         self.run_prediction_button.configure(state="disabled")
-        
+
         self.parent.reload_visualization_widgets()
-        self.parent.timeline_bar.load_timeline_predictions(self.parent.timeline_bar.visualized_round_index)
+        self.parent.timeline_bar.load_timeline_predictions(
+            self.parent.timeline_bar.visualized_round_index
+        )
 
     def _structure_predictions_by_round(self, flat_predictions: list):
         """Convert a flat list of predictions into a nested list: predictions[round][frame]."""
